@@ -51,35 +51,41 @@ export default {
      * Can be used to display the treeview options.
      */
     async getHierarchy() {
-        console.log("Getting hierarchy")
-        let options = await this.getSpaces()
-        await Promise.all(options.map(async (option) => {
-            const lists = await this.getLists(option.id);
-            await Promise.all(lists.map(async (list) => {
-                await this.getTasksFromList(list.id).then(tasks => {
-                    list.addChildren(tasks)
-                });
-                option.addChild(list);
-            }))
-        }));
-        console.log("Hierarchy built")
-        return options
+        try {
+            const spaces = await this.getSpaces()
+            await Promise.all(spaces.map(async (option) => {
+                const lists = await this.getLists(option.id);
+                await Promise.all(lists.map(async (list) => {
+                    await this.getTasksFromList(list.id).then(tasks => {
+                        list.addChildren(tasks)
+                    });
+                    option.addChild(list);
+                }))
+            }));
+            return spaces
+        } catch (e) {
+            console.error(e)
+        }
     },
 
     async getCachedHierarchy() {
-        const cached = cache.get(HIERARCHY_CACHE_KEY)
+        try {
+            const cached = cache.get(HIERARCHY_CACHE_KEY)
 
-        if (cached) {
-            console.log("Got hierarchy from cache")
-            return cached
+            if (cached) {
+                console.log("Got hierarchy from cache")
+                return cached
+            }
+
+            let hierarchy = await this.getHierarchy()
+            return cache.put(
+                HIERARCHY_CACHE_KEY,
+                hierarchy,
+                3600 * 6 // plus 6 hours
+            )
+        } catch (e) {
+            console.error(e)
         }
-
-        let hierarchy = await this.getHierarchy()
-        return cache.put(
-            HIERARCHY_CACHE_KEY,
-            hierarchy,
-            3600 * 6 // plus 6 hours
-        )
     },
 
     clearCachedHierarchy() {
@@ -196,7 +202,8 @@ export default {
      */
     async getTasksFromList(listId) {
 
-        let results = await new Promise((resolve, reject) => {
+            //console.log("Got tasks from list " + listId)
+            //console.log(results)
 
             request({
                 method: 'GET',
@@ -208,6 +215,23 @@ export default {
                 }
             }, (error, response) => {
                 if (error) return reject(error)
+        //console.log("Getting tasks from list " + listId)
+        try {
+            let results = await new Promise((resolve, reject) => {
+
+                request({
+                    method: 'GET',
+                    mode: 'no-cors',
+                    url: `${BASE_URL}/list/${listId}/task?archived=false&include_markdown_description=false&subtasks=true&include_closed=false`,
+                    headers: {
+                        'Authorization': store.get('settings.clickup_access_token'),
+                        'Content-Type': 'application/json'
+                    }
+                }, (error, response) => {
+                    if (error) return reject(error)
+                    resolve(JSON.parse(response.body).tasks || [])
+                });
+            })
                 resolve(JSON.parse(response.body).tasks || [])
             });
         })
@@ -235,24 +259,19 @@ export default {
                             return children.some(child => addChildInChildren(child.children, task))
                         }
                     } else {
-                        return false
+                        // If the parent task hasn't been processed yet, add the task back to the results array
+                        results.push(task);
                     }
+                } else {
+                    let newTask = factory.createTask(task);
+                    newTask.children = [];  // Ensure children property is always defined
+                    tasks.set(newTask.id, newTask);
                 }
-                if (addChildInChildren(tasks, task) === false) {
-                    results.unshift(task)
-                }
-            } else if (task.parent == null) {
-                tasks.push(factory.createTask(task))
-            } else {
-                results.unshift(task)
             }
 
-        }
-        tasks.sort(function (a, b) {
-            let textA = a.name.toUpperCase();
-            let textB = b.name.toUpperCase();
-            return (textA < textB) ? -1 : (textA > textB) ? 1 : 0;
-        });
+            if (loop_counter === 1000) {
+                console.error("Loop limit reached. Something is wrong.")
+            }
 
 
         return tasks
