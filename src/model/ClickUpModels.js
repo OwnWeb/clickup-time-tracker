@@ -1,5 +1,6 @@
 export const ClickUpType = {
     SPACE: "space",
+    FOLDER: "folder",
     LIST: "list",
     TASK: "task",
     SUBTASK: "subtask",
@@ -36,6 +37,10 @@ export class ClickUpItemFactory {
         return this.createItem(item, ClickUpType.LIST);
     }
 
+    createFolder(item){
+        return this.createItem(item, ClickUpType.FOLDER)
+    }
+
     createTask(item){
         return this.createItem(item, ClickUpType.TASK);
     }
@@ -62,6 +67,9 @@ export class ClickUpItem{
 
         switch (this.type){
             case ClickUpType.SPACE:
+                this.disable = true;
+                break;
+            case ClickUpType.FOLDER:
                 this.disable = true;
                 break;
             case ClickUpType.LIST:
