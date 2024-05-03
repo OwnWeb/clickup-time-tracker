@@ -58,6 +58,11 @@
             <div class="text-sm text-gray-500">You must be a CU admin to use this</div>
           </label>
         </n-form-item>
+
+        <n-form-item :show-feedback="false" :show-label="false" path="enable_statistics">
+          <n-switch v-model:value="model.enable_statistics" :default-value="false"/>
+          <label class="ml-3 text-gray-800">Enable statistics</label>
+        </n-form-item>
         <hr class="my-6"/>
         <!-- END | Feature toggles -->
 

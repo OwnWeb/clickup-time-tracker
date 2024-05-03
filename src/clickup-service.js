@@ -52,16 +52,44 @@ export default {
      */
     async getHierarchy() {
         try {
+
             const spaces = await this.getSpaces()
-            await Promise.all(spaces.map(async (option) => {
-                const lists = await this.getLists(option.id);
+            await Promise.all(spaces.map(async (space) => {
+
+                const folders = await this.getFolders(space.id).then(folders => {
+                    console.log(folders)
+                    return folders
+                });
+
+                console.error(folders)
+
+                await Promise.all(folders.map(async (folder) => {
+
+                    const folderdLists = await this.getLists(folder.id)
+
+                    console.log(folderdLists)
+
+                    if (folderdLists.size > 0) {
+                        await Promise.all(folderdLists.map(async (list) => {
+                            await this.getTasksFromList(list.id).then(tasks => {
+                                list.addChildren(tasks)
+                            })
+                            folder.addChildren(folderdLists)
+                        }))
+                        space.addChildren(folders)
+                    }
+                }))
+
+                const lists = await this.getLists(space.id);
                 await Promise.all(lists.map(async (list) => {
                     await this.getTasksFromList(list.id).then(tasks => {
                         list.addChildren(tasks)
                     });
-                    option.addChild(list);
+                    space.addChild(list);
                 }))
             }));
+            console.log(spaces)
+
             return spaces
         } catch (e) {
             console.error(e)
@@ -93,11 +121,23 @@ export default {
     },
 
     /*
+    * Get a single space from a team, by id (for now unused)
+     */
+    // TODO: ClickUp API has a path for getting a single space, but it doesn't work, always returns invalid id, so we
+    //  have to get all spaces and filter them. This is not ideal, but it works. Luckily, there(usually) are not that many
+    async getSpace(spaceId) {
+        let spaces = await this.getSpaces()
+            .then(spaces => {
+                return spaces.filter(space => space.id === spaceId)
+            })
+        return spaces[0]
+    },
+
+    /*
     * Get all spaces from a team
      */
     async getSpaces() {
-
-        let response = await new Promise((resolve, reject) => {
+        new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 mode: 'no-cors',
@@ -111,36 +151,20 @@ export default {
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body).spaces || [])
             });
+        }).then(spaces => {
+            spaces.map(space => factory.createSpace(space))
+            console.log(spaces)
+            return spaces
+        }).catch(e => {
+            console.error(e)
         })
-
-        return response.map(space => factory.createSpace(space))
-    },
-
-    /*
-    * Get all lists from a space. This had to be done in two steps because the API does not support getting all lists
-    * from a space. So we first get all folders, then get all lists from each folder, and finally get all lists that are
-    * not in a folder. Then we combine all lists and return them. A single api call would be much nicer. sigh.
-    */
-    async getLists(spaceId) {
-        const folderlessLists = await this.getFolderlessLists(spaceId);
-
-        let folderedLists = [];
-        const folders = await this.getFolders(spaceId);
-
-        await Promise.all(folders.map(async (folder) => {
-            folderedLists = folderedLists.concat(await this.getFolderedLists(folder.id));
-        }))
-
-        let list = folderlessLists.concat(folderedLists.flat());
-        return list.map(list => factory.createList(list))
     },
 
     /*
     * Get all folders from a space
-     */
+    */
     async getFolders(spaceId) {
-        return new Promise((resolve, reject) => {
-
+        new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 url: `${BASE_URL}/space/${spaceId}/folder?archived=false`,
@@ -152,15 +176,17 @@ export default {
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body).folders || [])
             });
+        }).then(folders => {
+            folders.map(folder => factory.createFolder(folder))
+            return folders
         })
     },
 
     /*
     * Get all lists from a folder
-     */
+    */
     async getFolderedLists(FolderId) {
-        return new Promise((resolve, reject) => {
-
+        new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 url: `${BASE_URL}/folder/${FolderId}/list?archived=false`,
@@ -172,15 +198,17 @@ export default {
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body).lists || [])
             });
+        }).then(lists => {
+            lists.map(list => factory.createList(list))
+            return lists
         })
     },
 
     /*
     * Get all lists from a space that are not in a folder
      */
-    async getFolderlessLists(spaceId) {
-        return new Promise((resolve, reject) => {
-
+    async getLists(spaceId) {
+        new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 mode: 'no-cors',
@@ -194,6 +222,9 @@ export default {
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body).lists || [])
             });
+        }).then(lists => {
+            lists.map(list => factory.createList(list))
+            return lists
         })
     },
 
@@ -202,8 +233,7 @@ export default {
      */
     async getTasksFromList(listId) {
 
-            //console.log("Got tasks from list " + listId)
-            //console.log(results)
+        let results = await new Promise((resolve, reject) => {
 
             request({
                 method: 'GET',
@@ -215,23 +245,6 @@ export default {
                 }
             }, (error, response) => {
                 if (error) return reject(error)
-        //console.log("Getting tasks from list " + listId)
-        try {
-            let results = await new Promise((resolve, reject) => {
-
-                request({
-                    method: 'GET',
-                    mode: 'no-cors',
-                    url: `${BASE_URL}/list/${listId}/task?archived=false&include_markdown_description=false&subtasks=true&include_closed=false`,
-                    headers: {
-                        'Authorization': store.get('settings.clickup_access_token'),
-                        'Content-Type': 'application/json'
-                    }
-                }, (error, response) => {
-                    if (error) return reject(error)
-                    resolve(JSON.parse(response.body).tasks || [])
-                });
-            })
                 resolve(JSON.parse(response.body).tasks || [])
             });
         })
@@ -240,9 +253,10 @@ export default {
         // It would be nice if the API would do this for us, but it doesn't. Nested list? Something? Anything?
         // Maybe it could be done faster. I would like to see it, if someone can do it better. out of curiosity.
         let tasks = []
+        let loop_counter = 0
 
-
-        while (results.length > 0) {
+        while (results.length > 0 && loop_counter < 1000) {
+            loop_counter = loop_counter + 1
             let task = results.pop()
             if (task.parent != null) {
                 let addChildInChildren = function (children, task) {
@@ -259,19 +273,31 @@ export default {
                             return children.some(child => addChildInChildren(child.children, task))
                         }
                     } else {
-                        // If the parent task hasn't been processed yet, add the task back to the results array
-                        results.push(task);
+                        return false
                     }
-                } else {
-                    let newTask = factory.createTask(task);
-                    newTask.children = [];  // Ensure children property is always defined
-                    tasks.set(newTask.id, newTask);
                 }
+                if (addChildInChildren(tasks, task) === false) {
+                    results.unshift(task)
+                }
+            } else if (task.parent == null) {
+                tasks.push(factory.createTask(task))
+            } else {
+                results.unshift(task)
             }
 
-            if (loop_counter === 1000) {
-                console.error("Loop limit reached. Something is wrong.")
-            }
+        }
+
+        if (loop_counter >= 1000) {
+            console.log(`Some parents tasks where not found fetching the task for list ${listId}`)
+            console.log('List of orphaned tasks:')
+            console.log(results)
+        }
+
+        tasks.sort(function (a, b) {
+            let textA = a.name.toUpperCase();
+            let textB = b.name.toUpperCase();
+            return (textA < textB) ? -1 : (textA > textB) ? 1 : 0;
+        });
 
 
         return tasks
@@ -295,14 +321,16 @@ export default {
     },
 
     async getColorsBySpace() {
-        let spaces = await this.getSpaces()
         let colors = new Map()
-
-        spaces.forEach(space => {
-            colors.set(space.id, space.color)
+        this.getSpaces().then(spaces => {
+            console.log(spaces)
+            if (spaces) {
+                spaces.forEach(space => {
+                    colors.set(space.id, space.color)
+                })
+            }
+            return colors
         })
-
-        return colors
     },
 
     async getSpaceIdFromTask(taskId) {
@@ -314,12 +342,14 @@ export default {
     * Get all time tracking entries within a given range
     */
     getTimeTrackingRange(start, end, userId) {
+        if ((!start && start === undefined) || (!end && end === undefined)) return;
+        console.log("Getting time tracking entries for range " + start + " - " + end)
 
         return new Promise((resolve, reject) => {
 
             const params = {
-                start_date: start.valueOf(),
-                end_date: end.valueOf(),
+                start_date: start.getTime(),
+                end_date: end.getTime(),
                 include_location_names: true,
             }
 
@@ -470,5 +500,18 @@ export default {
             await this.getUsers(),
             3600 * 6 // plus 6 hours
         )
+    },
+
+    /*
+     * Function to build a dataset for the charts in the statistics view
+     */
+    async getTimeTrackingData(start, end, userid = null) {
+        console.log("Getting time tracking data for range " + start + " - " + end)
+
+        // let data_by_day = new Map()
+
+        this.getTimeTrackingData(start, end, userid).then((data) => {
+            console.log(data)
+        })
     }
 }

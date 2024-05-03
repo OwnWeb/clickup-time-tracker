@@ -1,7 +1,7 @@
 <script setup>
 import {NAvatar, NButton, NForm, NIcon, NMention, NH1, NTreeSelect, NFormItem, useNotification, NConfigProvider} from "naive-ui";
 import {ArrowPathIcon} from "@heroicons/vue/20/solid";
-import {Planet, List, } from '@vicons/ionicons5'
+import {Planet, List, Folder} from '@vicons/ionicons5'
 import {CircleFilled} from "@vicons/carbon";
 import {h, onMounted, ref, defineEmits} from "vue";
 import {ipcRenderer} from 'electron';
@@ -231,6 +231,9 @@ function renderSwitcherIcon(option) {
   switch (option.option.type) {
     case 'space':
       icon = Planet
+      break;
+    case 'folder':
+      icon = Folder;
       break;
     case 'list':
       icon = List;
