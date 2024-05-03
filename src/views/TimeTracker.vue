@@ -4,7 +4,17 @@
       :open="memberSelectorOpen"
   />
 
+  <time-tracking-statistics
+      v-if="store.get('settings.enable_statistics')"
+      :open="statisticsOpen"
+      :events="getEventsFromSelectedWeek()"
+  />
+
   <!-- START | Calendar view -->
+  <!--
+    The 'mousedown' event is a problem. If you click on member selector or statistics, while one or the other is open
+    it will just close whichever is open.
+  -->
   <vue-cal
       ref="calendar"
       :click-to-navigate="false"
@@ -24,9 +34,8 @@
       :watch-real-time="true"
       active-view="week"
       today-button
-      @mousedown="memberSelectorOpen = false"
-      @ready="fetchEvents"
-      @view-change="fetchEvents"
+      @ready="handleDateChange"
+      @view-change="handleDateChange"
       @event-drop="updateTimeTrackingEntry"
       @event-duration-change="updateTimeTrackingEntry"
       @keydown.meta.delete.exact="deleteSelectedTask()"
@@ -50,9 +59,17 @@
           <button
               v-if="store.get('settings.admin_features_enabled')"
               class="hover:text-gray-800"
-              @click="memberSelectorOpen = !memberSelectorOpen"
+              @click="memberSelectorOpen = !memberSelectorOpen; statisticsOpen = false"
           >
             <users-icon class="w-5"/>
+          </button>
+
+          <button
+              v-if="store.get('settings.enable_statistics')"
+              class="hover:text-gray-800"
+              @click="memberSelectorOpen = false; statisticsOpen = !statisticsOpen"
+          >
+            <chart-pie-icon class="w-5"/>
           </button>
         </div>
         <!-- End | Extra controls -->
@@ -238,7 +255,10 @@ import eventFactory from "@/events-factory";
 import clickupService from "@/clickup-service";
 
 import MemberSelector from '@/components/MemberSelector'
-import {CogIcon, UsersIcon, InformationCircleIcon} from "@heroicons/vue/20/solid";
+import TimeTrackingStatistics from '@/components/TimeTrackingStatistics'
+import TaskCreatorForm from '@/components/TaskCreatorForm.vue'
+
+import {CogIcon, UsersIcon, InformationCircleIcon, ChartPieIcon} from "@heroicons/vue/20/solid";
 import {ClockIcon, TrashIcon, PencilIcon} from "@heroicons/vue/24/outline";
 import {
   NMention,
@@ -254,13 +274,13 @@ import {
   NAvatar,
   useNotification
 } from "naive-ui";
-import TaskCreatorForm from "@/components/TaskCreatorForm.vue";
 
 export default {
   components: {
-    TaskCreatorForm,
     VueCal,
     MemberSelector,
+    TimeTrackingStatistics,
+    TaskCreatorForm,
     RouterLink,
     NMention,
     NModal,
@@ -275,6 +295,7 @@ export default {
     ClockIcon,
     CogIcon,
     UsersIcon,
+    ChartPieIcon,
     TrashIcon,
     PencilIcon,
     InformationCircleIcon,
@@ -296,6 +317,7 @@ export default {
       showTaskCreationModal: ref(false),
       showTaskDetailsModal: ref(false),
       memberSelectorOpen: ref(false),
+      statisticsOpen: ref(false),
       selectedTask: ref({}),
 
       rules: ref({
@@ -328,7 +350,6 @@ export default {
 
   data() {
     return {
-      colorPalette: new Map(),
       colorClasses: ''
     }
   },
@@ -341,7 +362,6 @@ export default {
     this.refreshBackgroundImage();
 
     if (!store.get('settings.custom_color_enabled')) {
-      this.colorPalette = await this.getColorPalette();
       this.colorClasses = this.colorPaletteToStyleClasses();
       this.$nextTick(() => {
         this.addStyleToHead(this.colorClasses)
@@ -354,17 +374,17 @@ export default {
   },
 
   computed: {
-      dayStart() {
-          if(! store.get('settings.day_start')) return 7 * 60
-          if (store.get('settings.day_start') > 24) return 7 * 60
-          return store.get('settings.day_start') * 60;
-      },
+    dayStart() {
+      if (!store.get('settings.day_start')) return 7 * 60
+      if (store.get('settings.day_start') > 24) return 7 * 60
+      return store.get('settings.day_start') * 60;
+    },
 
-      dayEnd() {
-          if(! store.get('settings.day_end')) return 22 * 60
-          if(store.get('settings.day_end') > 24) return 22 * 60
-          return store.get('settings.day_end') * 60;
-      },
+    dayEnd() {
+      if (!store.get('settings.day_end')) return 22 * 60
+      if (store.get('settings.day_end') > 24) return 22 * 60
+      return store.get('settings.day_end') * 60;
+    },
   },
 
   methods: {
@@ -373,6 +393,14 @@ export default {
     | FETCH TIME TRACKING ENTRIES
     |--------------------------------------------------------------------------
     */
+    async handleDateChange({startDate, endDate}) {
+      if ((!startDate && startDate === undefined) || (!endDate && endDate === undefined)) return;
+      this.start_date = startDate
+      this.end_date = endDate
+
+      // Add any functions here that should be called when the date range changes
+      await this.fetchEvents({startDate, endDate})
+    },
 
     async fetchEvents({startDate, endDate}) {
       let customColorEnabled = false
@@ -404,6 +432,8 @@ export default {
     */
     onTaskCreate(event, deleteCallable) {
       this.colorEvent(event)
+      this.memberSelectorOpen = false;
+      this.statisticsOpen = false;
       // Workaround: Open modal when mouse is released
       // Register mouseup listener that deregisters itself
       const openModalWhenMouseReleased = () => {
@@ -442,11 +472,13 @@ export default {
     },
 
     pushTimeTrackingEntry(event) {
+      console.log("pushTimeTrackingEntry")
+      console.log(event)
       this.closeCreationModal();
-      eventFactory.updateFromRemote(this.selectedTask, event).then((entry) => {
-        this.selectedTask = entry
-        this.events.push(entry);
-      });
+      this.fetchEvents({
+        startDate: this.start_date,
+        endDate: this.end_date
+      })
     },
 
     cancelTaskCreation() {
@@ -620,13 +652,14 @@ export default {
     },
 
     getColorPalette: async function () {
-      return await clickupService.getColorsBySpace()
+
     },
 
-    colorPaletteToStyleClasses: function (){
+    colorPaletteToStyleClasses: function () {
       let classes = '';
-      this.colorPalette.forEach((value, key) => {
-        classes += `
+      clickupService.getColorsBySpace().then( colorPalette => {
+        colorPalette.forEach((value, key) => {
+          classes += `
           .space-${key} {
             background-color: ${value}59;
           }
@@ -634,8 +667,9 @@ export default {
             background-color: ${value};
           }
         `
+        })
+        return classes
       })
-      return classes
     },
 
     addStyleToHead: function (style) {
@@ -650,6 +684,23 @@ export default {
       if (styleElement) {
         document.head.removeChild(styleElement)
       }
+    },
+
+    getEventsFromSelectedWeek: function () {
+      // Get all dates from startdate and end date
+      let date = new Date(this.start_date)
+      let dates = []
+      while (date <= this.end_date) {
+        dates.push(new Date(date))
+        date.setDate(date.getDate() + 1)
+      }
+      // Get all events from those dates
+      return this.events.filter(event => {
+        return dates.find(date => {
+          return event.start.toISOString().split('T')[0] === date.toISOString().split('T')[0]
+        })
+      })
+
     }
   }
 };
