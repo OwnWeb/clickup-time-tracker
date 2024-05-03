@@ -165,9 +165,9 @@ async function buildDaysOfWeekChart(processedEvents) {
 
 async function buildGoalsCharts(processedEvents) {
   // Build a chart for each space, all but them to the goalsCharts object
-  console.log(spaces.value)
+  // console.log(spaces.value)
   for(let space of spaces.value) {
-    console.log(space)
+    // console.log(space)
     let spaceEvents = processedEvents.filter(event => event.spaceName === space)
     let spaceEventsDuration = spaceEvents.reduce((accumulator, currentValue) => accumulator + currentValue.durationInHours, 0)
     goalCharts[space] = {
@@ -180,7 +180,7 @@ async function buildGoalsCharts(processedEvents) {
       }]
     }
   }
-  console.log(goalCharts)
+  // console.log(goalCharts)
 }
 
 // Week chart

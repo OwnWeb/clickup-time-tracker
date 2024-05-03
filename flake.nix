@@ -8,18 +8,19 @@
   outputs = { self, nixpkgs }:
     let
         system = "x86_64-linux";
-        pkgs = nixpkgs.leagacyPackages.${system};
+        pkgs = import nixpkgs { inherit system; };
     in {
-        devShell = pkgs.mkShell {
+        devShell.${system} = pkgs.mkShell {
             buildInputs = with pkgs; [
-                nodejs-16_x
+                nodejs-18_x
                 nodePackages.npm
                 nodePackages.vue-cli
-                nodePackages.electron
+                electron
             ];
 
             shellHook = ''
-                vui-cli=service electron:serveni
+                npm install
+                vue-cli-service electron:serve
             '';
         };
 
