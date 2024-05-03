@@ -51,46 +51,64 @@ export default {
      * Can be used to display the treeview options.
      */
     async getHierarchy() {
+        const spaces = await this.getSpaces().catch(e => {
+            console.error(e)
+        })
         try {
-
-            const spaces = await this.getSpaces()
-            await Promise.all(spaces.map(async (space) => {
-
-                const folders = await this.getFolders(space.id).then(folders => {
-                    console.log(folders)
-                    return folders
-                });
-
-                console.error(folders)
-
-                await Promise.all(folders.map(async (folder) => {
-
-                    const folderdLists = await this.getLists(folder.id)
-
-                    console.log(folderdLists)
-
-                    if (folderdLists.size > 0) {
-                        await Promise.all(folderdLists.map(async (list) => {
-                            await this.getTasksFromList(list.id).then(tasks => {
-                                list.addChildren(tasks)
+            if (spaces.length > 0) {
+                await Promise.all(spaces.map(async (space) => {
+                    console.log("Building hierarchy for:")
+                    console.log(space.name)
+                    const folders = await this.getFolders(space.id).catch(e => {
+                        console.error(e)
+                    })
+                    if (folders.length > 0) {
+                        console.log("Folders for space: " + space.name)
+                        console.log(folders)
+                        await Promise.all(folders.map(async (folder) => {
+                            const folderdlLists = await this.getFolderedLists(folder.id).catch(e => {
+                                console.error(e)
                             })
-                            folder.addChildren(folderdLists)
-                        }))
+                            if (folderdlLists.length > 0) {
+                                console.log("Lists for folder " + folder.name)
+                                console.log(folderdlLists)
+                                await Promise.all(folderdlLists.map(async (folderdlList) => {
+                                    const tasks = await this.getTasksFromList(folderdlList.id).catch(e => {
+                                        console.error(e)
+                                    })
+                                    folderdlList.addChildren(tasks)
+                                })).catch(e => {
+                                    console.error(e)
+                                })
+                                folder.addChildren(folderdlLists)
+                            }
+                        })).catch(e => {
+                            console.error(e)
+                        })
                         space.addChildren(folders)
                     }
-                }))
 
-                const lists = await this.getLists(space.id);
-                await Promise.all(lists.map(async (list) => {
-                    await this.getTasksFromList(list.id).then(tasks => {
-                        list.addChildren(tasks)
-                    });
-                    space.addChild(list);
-                }))
-            }));
-            console.log(spaces)
-
-            return spaces
+                    const lists = await this.getLists(space.id).catch(e => {
+                        console.error(e)
+                    })
+                    if (lists.length > 0) {
+                        await Promise.all(lists.map(async (list) => {
+                            const tasks = await this.getTasksFromList(list.id).catch(e => {
+                                console.error(e)
+                            })
+                            if (tasks.length > 0) {
+                                list.addChildren(tasks);
+                            }
+                        })).catch(e => {
+                            console.error(e)
+                        })
+                        space.addChildren(lists)
+                    }
+                })).catch(e => {
+                    console.error(e)
+                })
+                return spaces
+            }
         } catch (e) {
             console.error(e)
         }
@@ -105,7 +123,9 @@ export default {
                 return cached
             }
 
-            let hierarchy = await this.getHierarchy()
+            let hierarchy = await this.getHierarchy().catch(e => {
+                console.error(e)
+            })
             return cache.put(
                 HIERARCHY_CACHE_KEY,
                 hierarchy,
@@ -129,6 +149,8 @@ export default {
         let spaces = await this.getSpaces()
             .then(spaces => {
                 return spaces.filter(space => space.id === spaceId)
+            }).catch(e => {
+                console.error(e)
             })
         return spaces[0]
     },
@@ -137,7 +159,7 @@ export default {
     * Get all spaces from a team
      */
     async getSpaces() {
-        new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 mode: 'no-cors',
@@ -152,8 +174,9 @@ export default {
                 resolve(JSON.parse(response.body).spaces || [])
             });
         }).then(spaces => {
-            spaces.map(space => factory.createSpace(space))
-            console.log(spaces)
+            spaces = spaces.map(space => factory.createSpace(space))
+            // console.log("Spaces received from ClickUp: ")
+            // console.log(spaces)
             return spaces
         }).catch(e => {
             console.error(e)
@@ -164,7 +187,7 @@ export default {
     * Get all folders from a space
     */
     async getFolders(spaceId) {
-        new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 url: `${BASE_URL}/space/${spaceId}/folder?archived=false`,
@@ -177,8 +200,12 @@ export default {
                 resolve(JSON.parse(response.body).folders || [])
             });
         }).then(folders => {
-            folders.map(folder => factory.createFolder(folder))
+            folders = folders.map(folder => factory.createFolder(folder))
+            // console.log("Folders received from ClickUp")
+            // console.log(folders)
             return folders
+        }).catch(e => {
+            console.error(e)
         })
     },
 
@@ -186,7 +213,7 @@ export default {
     * Get all lists from a folder
     */
     async getFolderedLists(FolderId) {
-        new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 url: `${BASE_URL}/folder/${FolderId}/list?archived=false`,
@@ -199,8 +226,10 @@ export default {
                 resolve(JSON.parse(response.body).lists || [])
             });
         }).then(lists => {
-            lists.map(list => factory.createList(list))
+            lists = lists.map(list => factory.createList(list))
             return lists
+        }).catch(e => {
+            console.error(e)
         })
     },
 
@@ -208,7 +237,7 @@ export default {
     * Get all lists from a space that are not in a folder
      */
     async getLists(spaceId) {
-        new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 mode: 'no-cors',
@@ -223,8 +252,10 @@ export default {
                 resolve(JSON.parse(response.body).lists || [])
             });
         }).then(lists => {
-            lists.map(list => factory.createList(list))
+            lists = lists.map(list => factory.createList(list))
             return lists
+        }).catch(e => {
+            console.error(e)
         })
     },
 
@@ -247,6 +278,8 @@ export default {
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body).tasks || [])
             });
+        }).catch(e => {
+            console.error(e)
         })
 
         // Link subtasks to their parent
@@ -254,7 +287,7 @@ export default {
         // Maybe it could be done faster. I would like to see it, if someone can do it better. out of curiosity.
         let tasks = []
         let loop_counter = 0
-
+        //console.log(results)
         while (results.length > 0 && loop_counter < 1000) {
             loop_counter = loop_counter + 1
             let task = results.pop()
@@ -317,31 +350,41 @@ export default {
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body) || [])
             });
+        }).then(task => {
+            task = factory.createTask(task)
+            return task
+        }).catch(e => {
+            console.error(e)
         })
     },
 
     async getColorsBySpace() {
-        let colors = new Map()
-        this.getSpaces().then(spaces => {
-            console.log(spaces)
+        return this.getSpaces().then(spaces => {
+            // console.log("Spaces for color pallete:")
+            // console.log(spaces)
+            let colors = new Map()
             if (spaces) {
                 spaces.forEach(space => {
                     colors.set(space.id, space.color)
                 })
             }
             return colors
+        }).catch(e => {
+            console.error(e)
         })
     },
 
     async getSpaceIdFromTask(taskId) {
-        let task = await this.getTask(taskId)
+        const task = await this.getTask(taskId).catch(e => {
+            console.error(e)
+        })
         return task.space.id
     },
 
     /*
     * Get all time tracking entries within a given range
     */
-    getTimeTrackingRange(start, end, userId) {
+    async getTimeTrackingRange(start, end, userId) {
         if ((!start && start === undefined) || (!end && end === undefined)) return;
         console.log("Getting time tracking entries for range " + start + " - " + end)
 

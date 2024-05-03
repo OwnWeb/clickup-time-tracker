@@ -348,29 +348,23 @@ export default {
     };
   },
 
-  data() {
-    return {
-      colorClasses: ''
-    }
-  },
-
   async mounted() {
     // Register background process listeners
     this.fetchMentionableUsers();
 
     // Load background image if set
     this.refreshBackgroundImage();
-
-    if (!store.get('settings.custom_color_enabled')) {
-      this.colorClasses = this.colorPaletteToStyleClasses();
-      this.$nextTick(() => {
-        this.addStyleToHead(this.colorClasses)
-      })
-    } else {
-      this.$nextTick(() => {
-        this.removeStyleFromHead()
-      })
-    }
+    this.colorPaletteToStyleClasses().then(colorClasses => {
+      if (!store.get('settings.custom_color_enabled')) {
+        this.$nextTick(() => {
+          this.addStyleToHead(colorClasses)
+        })
+      } else {
+        this.$nextTick(() => {
+          this.removeStyleFromHead()
+        })
+      }
+    })
   },
 
   computed: {
@@ -655,9 +649,12 @@ export default {
 
     },
 
-    colorPaletteToStyleClasses: function () {
+    colorPaletteToStyleClasses: async function () {
       let classes = '';
-      clickupService.getColorsBySpace().then( colorPalette => {
+      return clickupService.getColorsBySpace().then(colorPalette => {
+        // console.log("ColorPalette: ")
+        // console.log(colorPalette)
+
         colorPalette.forEach((value, key) => {
           classes += `
           .space-${key} {
