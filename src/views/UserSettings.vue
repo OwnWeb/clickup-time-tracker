@@ -14,25 +14,25 @@
       </n-form-item>
       <div class="flex space-x-4">
         <n-form-item label="Day starts at" path="day_start" class="flex-grow">
-            <n-select
-                v-model:value="model.day_start"
-                :options="hours"
-            >
-                <template #arrow>
-                    <ClockIcon class="w-4" />
-                </template>
-            </n-select>
+          <n-select
+              v-model:value="model.day_start"
+              :options="hours"
+          >
+            <template #arrow>
+              <ClockIcon class="w-4"/>
+            </template>
+          </n-select>
         </n-form-item>
 
         <n-form-item label="Day ends at" path="day_end" class="flex-grow">
-            <n-select
-                v-model:value="model.day_end"
-                :options="hours"
-            >
-                <template #arrow>
-                    <ClockIcon class="w-4" />
-                </template>
-            </n-select>
+          <n-select
+              v-model:value="model.day_end"
+              :options="hours"
+          >
+            <template #arrow>
+              <ClockIcon class="w-4"/>
+            </template>
+          </n-select>
         </n-form-item>
       </div>
 
@@ -98,6 +98,48 @@
         <hr class="my-6"/>
         <!-- END | Styling -->
 
+        <!-- START | Goals -->
+        <label class="absolute px-1.5 bg-white -ml-4 -mt-9">Goals</label>
+        <n-form-item :show-label="false" :show-feedback="false" path="goals">
+          <n-dynamic-input
+              v-model:value="model.goals"
+              :on-create="onAddGoal"
+              :disabled="!model.enable_statistics"
+              :min="0"
+              :max="4"
+          >
+            <template #create-button-default>
+              Add a goal
+            </template>
+            <template #default="{value}">
+              <div style="display: flex; align-items: center; width: 100%">
+                <n-select
+                    v-model:value="value.type"
+                    :options="clickUpTypeOptions"
+                    :render-label="renderDropDownIcon"
+                    class="mr-2.5"
+                    style="width: 200px"
+                    placeholder="Type"
+                />
+                <n-input
+                    v-model:value="value.clickUpId"
+                    placeholder="ClickUp Id"
+                    type="text"
+                    class="mr-2.5"
+                />
+                <n-input-number
+                    v-model:value="value.goal"
+                    :min="0"
+                    :max="168"
+                    style="width: 175px"
+                />
+              </div>
+            </template>
+          </n-dynamic-input>
+        </n-form-item>
+        <hr class="my-6"/>
+        <!-- END | Goals -->
+
         <!-- START | Danger zone -->
         <label class="absolute px-1.5 bg-white -ml-4 -mt-9">Danger zone</label>
         <n-popconfirm :show-icon="false" @positive-click="flushCaches">
@@ -123,8 +165,18 @@
     </n-form>
 
     <div class="flex flex-col p-3 space-y-4 shadow-inner bg-gray-50">
-      <h2 class="text-lg font-bold text-gray-700">Instructions</h2>
+      <h2 class="text-xl font-bold text-gray-700">Instructions</h2>
       <p>Click & drag in order to create a new tracking entry</p>
+
+      <h3 class="text-lg font-bold text-gray-700">Styling</h3>
+      <p>It is possible to give all tracking entries the same color, this is done by turning on the option, and
+        selecting the preferred color. When the option is turned off the color of the entry is based on color given, in
+        ClickUp, to the Space that the tracked task belongs too.</p>
+
+      <h3 class="text-lg font-bold text-gray-700">Goals</h3>
+      <p>When statistics are enabled, you can add up to 4 weekly goals. Fill in the ID of either a ClickUp Space,
+        Folder, List, or Task, with a weekly working quota. And bar chart will be added to the statistics panel to track
+        your progress.</p>
 
       <h2 class="text-lg font-bold text-gray-700">Keybindings</h2>
 
@@ -178,24 +230,77 @@
 </template>
 
 <script>
-import { ref } from "vue";
-import { useRouter } from "vue-router";
-import { NForm, NFormItem, NInput, NSelect, NSwitch, NButton, NPopconfirm, NColorPicker, useNotification } from "naive-ui";
-import { BackspaceIcon, ClockIcon } from "@heroicons/vue/24/outline";
+import {h, ref} from "vue";
+import {useRouter} from "vue-router";
+import {
+  NForm,
+  NFormItem,
+  NInput,
+  NSelect,
+  NSwitch,
+  NButton,
+  NPopconfirm,
+  NColorPicker,
+  useNotification,
+  NDynamicInput,
+  NInputNumber,
+  NIcon
+} from "naive-ui";
+import {BackspaceIcon, ClockIcon} from "@heroicons/vue/24/outline";
 import clickupService from '@/clickup-service';
 import store from "@/store";
 import cache from "@/cache";
+import {ClickUpType} from "@/model/ClickUpModels";
+
+import {Planet, List, Folder} from '@vicons/ionicons5'
+import {CircleFilled} from "@vicons/carbon";
 
 export default {
-  components: { NForm, NFormItem, NInput, NSelect, NSwitch, NButton, NPopconfirm, BackspaceIcon, ClockIcon, NColorPicker},
-  
+  components: {
+    NForm,
+    NFormItem,
+    NInput,
+    NSelect,
+    NSwitch,
+    NButton,
+    NPopconfirm,
+    BackspaceIcon,
+    ClockIcon,
+    NColorPicker,
+    NDynamicInput,
+    NInputNumber,
+  },
+
   setup() {
     const form = ref(null);
     const router = useRouter();
     const notification = useNotification();
     const model = ref(store.get("settings") || {});
-    const hours = ref(Array.from(Array(25).keys()).map((i) => ({ label: `${i}:00`, value: i })));
+    const hours = ref(Array.from(Array(25).keys()).map((i) => ({label: `${i}:00`, value: i})));
     let custom_color = ref(false);
+
+    const clickUpTypeOptions = [
+      {
+        label: 'Space',
+        value: ClickUpType.SPACE,
+        icon: Planet,
+      },
+      {
+        label: 'Folder',
+        value: ClickUpType.FOLDER,
+        icon: Folder,
+      },
+      {
+        label: 'List',
+        value: ClickUpType.LIST,
+        icon: List,
+      },
+      {
+        label: 'Task',
+        value: ClickUpType.TASK,
+        icon: CircleFilled,
+      },
+    ];
 
     function mustFlushCachesAfterPersist() {
       // Either the CU acces token or team id has changed
@@ -208,6 +313,15 @@ export default {
       model,
       hours,
       custom_color,
+      clickUpTypeOptions,
+      renderDropDownIcon: (option) => {
+        return [
+          h('div', { style: 'display: flex; align-items: center;' }, [
+            h(NIcon, {size: '15px', id: 'cascader-icon'}, {default: () => h(option.icon)}),
+            h('span', { style: 'margin-left: 8px;'}, option.label)
+          ])
+        ]
+      },
 
       persist() {
         form.value
@@ -243,6 +357,15 @@ export default {
         }
       },
 
+      onAddGoal() {
+        return {
+          type: undefined,
+          clickUpId: undefined,
+          goal: 0
+        }
+      },
+
+
       rules: {
         clickup_access_token: [
           {
@@ -271,10 +394,10 @@ export default {
           {
             required: true,
             validator(rule, value) {
-                if (Number(value) >= Number(model.value.day_end)) {
-                    return new Error("Must be less than the end of day");
-                }
-                return true;
+              if (Number(value) >= Number(model.value.day_end)) {
+                return new Error("Must be less than the end of day");
+              }
+              return true;
             },
             trigger: ["input", "blur"],
           },
