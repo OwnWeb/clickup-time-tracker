@@ -7,7 +7,9 @@
   <time-tracking-statistics
       v-if="store.get('settings.enable_statistics')"
       :open="statisticsOpen"
-      :events="getEventsFromSelectedWeek()"
+      :events="this.events"
+      :start_date="this.start_date"
+      :end_date="this.end_date"
   />
 
   <!-- START | Calendar view -->
@@ -241,11 +243,8 @@
 
 
 <script>
-import {ref, h} from "vue";
+import {h, ref} from "vue";
 import {RouterLink} from "vue-router";
-
-const shell = require('electron').shell;
-
 import VueCal from "vue-cal";
 import "@/assets/vuecal.scss";
 
@@ -258,22 +257,24 @@ import MemberSelector from '@/components/MemberSelector'
 import TimeTrackingStatistics from '@/components/TimeTrackingStatistics'
 import TaskCreatorForm from '@/components/TaskCreatorForm.vue'
 
-import {CogIcon, UsersIcon, InformationCircleIcon, ChartPieIcon} from "@heroicons/vue/20/solid";
-import {ClockIcon, TrashIcon, PencilIcon} from "@heroicons/vue/24/outline";
+import {ChartPieIcon, CogIcon, InformationCircleIcon, UsersIcon} from "@heroicons/vue/20/solid";
+import {ClockIcon, PencilIcon, TrashIcon} from "@heroicons/vue/24/outline";
 import {
-  NMention,
-  NModal,
+  NAvatar,
+  NButton,
   NCard,
   NForm,
   NFormItem,
-  NSpace,
   NIcon,
+  NMention,
+  NModal,
   NPopconfirm,
   NPopover,
-  NButton,
-  NAvatar,
+  NSpace,
   useNotification
 } from "naive-ui";
+
+const shell = require('electron').shell;
 
 export default {
   components: {
@@ -682,23 +683,6 @@ export default {
         document.head.removeChild(styleElement)
       }
     },
-
-    getEventsFromSelectedWeek: function () {
-      // Get all dates from startdate and end date
-      let date = new Date(this.start_date)
-      let dates = []
-      while (date <= this.end_date) {
-        dates.push(new Date(date))
-        date.setDate(date.getDate() + 1)
-      }
-      // Get all events from those dates
-      return this.events.filter(event => {
-        return dates.find(date => {
-          return event.start.toISOString().split('T')[0] === date.toISOString().split('T')[0]
-        })
-      })
-
-    }
   }
 };
 </script>

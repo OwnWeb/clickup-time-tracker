@@ -57,21 +57,15 @@ export default {
         try {
             if (spaces.length > 0) {
                 await Promise.all(spaces.map(async (space) => {
-                    console.log("Building hierarchy for:")
-                    console.log(space.name)
                     const folders = await this.getFolders(space.id).catch(e => {
                         console.error(e)
                     })
                     if (folders.length > 0) {
-                        console.log("Folders for space: " + space.name)
-                        console.log(folders)
                         await Promise.all(folders.map(async (folder) => {
                             const folderdlLists = await this.getFolderedLists(folder.id).catch(e => {
                                 console.error(e)
                             })
                             if (folderdlLists.length > 0) {
-                                console.log("Lists for folder " + folder.name)
-                                console.log(folderdlLists)
                                 await Promise.all(folderdlLists.map(async (folderdlList) => {
                                     const tasks = await this.getTasksFromList(folderdlList.id).catch(e => {
                                         console.error(e)
@@ -183,6 +177,29 @@ export default {
         })
     },
 
+    async getFolder(folderId){
+        return new Promise((resolve, reject) => {
+            request({
+                method: 'GET',
+                url: `${BASE_URL}/folder/${folderId}`,
+                headers: {
+                    'Authorization': store.get('settings.clickup_access_token'),
+                    'Content-Type': 'application/json'
+                }
+            }, (error, response) => {
+                if (error) return reject(error)
+                resolve(JSON.parse(response.body) || [])
+            });
+        }).then(folder => {
+            folder = factory.createFolder(folder)
+            // console.log("Folders received from ClickUp")
+            // console.log(folders)
+            return folder
+        }).catch(e => {
+            console.error(e)
+        })
+    },
+
     /*
     * Get all folders from a space
     */
@@ -233,9 +250,26 @@ export default {
         })
     },
 
-    /*
-    * Get all lists from a space that are not in a folder
-     */
+    async getList(listId){
+        return new Promise((resolve, reject) => {
+            request({
+                method: 'GET',
+                url: `${BASE_URL}/list/${listId}`,
+                headers: {
+                    'Authorization': store.get('settings.clickup_access_token'),
+                    'Content-Type': 'application/json'
+                }
+            }, (error, response) => {
+                if (error) return reject(error)
+                resolve(JSON.parse(response.body) || [])
+            });
+        }).then(list => {
+            list = factory.createList(list)
+            return list
+        }).catch(e => {
+            console.error(e)
+        })
+    },
     async getLists(spaceId) {
         return new Promise((resolve, reject) => {
             request({
@@ -375,24 +409,26 @@ export default {
     },
 
     async getSpaceIdFromTask(taskId) {
-        const task = await this.getTask(taskId).catch(e => {
+        await this.getTask(taskId).then(task => {
+            return task.space.id
+        }).catch(e => {
             console.error(e)
         })
-        return task.space.id
     },
 
     /*
     * Get all time tracking entries within a given range
     */
-    async getTimeTrackingRange(start, end, userId) {
+    async getTimeTrackingRange(start, end, userId = '', space_id = '', folder_id = '', list_id = '', task_id = '') {
         if ((!start && start === undefined) || (!end && end === undefined)) return;
-        console.log("Getting time tracking entries for range " + start + " - " + end)
-
         return new Promise((resolve, reject) => {
-
             const params = {
                 start_date: start.getTime(),
                 end_date: end.getTime(),
+                space_id: space_id,
+                folder_id: folder_id,
+                list_id: list_id,
+                task_id: task_id,
                 include_location_names: true,
             }
 
@@ -419,6 +455,10 @@ export default {
                 }
                 resolve(body.data || [])
             });
+        }).then(timeTackingData => {
+            return timeTackingData.filter(item => {
+                return item.start >= start.getTime() && item.end <= end.getTime();
+            })
         })
     },
 
@@ -544,17 +584,4 @@ export default {
             3600 * 6 // plus 6 hours
         )
     },
-
-    /*
-     * Function to build a dataset for the charts in the statistics view
-     */
-    async getTimeTrackingData(start, end, userid = null) {
-        console.log("Getting time tracking data for range " + start + " - " + end)
-
-        // let data_by_day = new Map()
-
-        this.getTimeTrackingData(start, end, userid).then((data) => {
-            console.log(data)
-        })
-    }
 }

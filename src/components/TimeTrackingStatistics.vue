@@ -4,15 +4,19 @@ import clickupService from "@/clickup-service";
 import {ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip} from 'chart.js'
 import {Bar, Doughnut} from 'vue-chartjs'
 import store from "@/store";
+import GoalGraph from "@/components/GoalGraph.vue";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement)
 
 const props = defineProps({
   open: Boolean,
-  events: Array
+  events: Array,
+  start_date: Date,
+  end_date: Date
 })
 
 let loading = ref(false);
+let goals = store.get("settings.goals")
 
 // Days of week chart
 let daysOfWeekChartData = ref({datasets: []});
@@ -66,24 +70,8 @@ let weekChartPlugins = {
   }
 };
 
-// Goals chart
-let goalsChartOptions = ref({
-  indexAxis: 'y',
-  maintainAspectRatio: true,
-  plugins: {
-    legend: {
-      display: false
-    },
-  }
-})
-let goalsChartStyles = ref({
-  position: 'relative',
-  height: '225px',
-})
-
 // Globals
 let spaces = []
-let goalCharts = {}
 
 onMounted(() => {
   clickupService.getSpaces().then(found_spaces => {
@@ -103,12 +91,14 @@ watch(() => props.open, open => {
 })
 
 watch(() => props.events, events => {
+  loading.value = true;
   if (!events.length) {
     daysOfWeekChartData.value = {datasets: []}
     weekChartData.value = {datasets: []}
+    loading.value = false;
     return;
   }
-  buildEventsData(events)
+  buildEventsData(events).then(() => loading.value = false)
 })
 
 async function buildEventsData(events) {
@@ -117,14 +107,13 @@ async function buildEventsData(events) {
     return {
       spaceName: (foundSpace) ? foundSpace.name : "Unknown space",
       color: (foundSpace) ? foundSpace.color : "#ADD8E67F",
-      startDate: new Date(event.start).toISOString().split('T')[0],
-      endDate: new Date(event.end).toISOString().split('T')[0],
+      startDate: new Date(event.start).toLocaleDateString('en-CA'),
+      endDate: new Date(event.end).toLocaleDateString('en-CA'),
       durationInHours: (new Date(event.end) - new Date(event.start)) / 3600000
     }
   })).then(processedEvents => {
     buildDaysOfWeekChart(processedEvents)
     buildWeekChart(processedEvents)
-    buildGoalsCharts(processedEvents)
   }).catch(error => {
     console.error(error)
   })
@@ -132,25 +121,22 @@ async function buildEventsData(events) {
 
 // Build days of week chart data
 async function buildDaysOfWeekChart(processedEvents) {
-  // Get all dates of given week
-
-  const weekLength = (!store.get('settings.show_weekend')) ? 5 : 7
-  let startDate = new Date(props.events[0].start)
-  let weekDates = [];
-
-  for (let i = 1; i < weekLength + 1; i++) {
-    const day = new Date(startDate);
-    day.setDate(day.getDate() - day.getDay() + i);
-    weekDates.push(day);
+  let date = new Date(props.start_date)
+  let dates = []
+  while (date <= props.end_date) {
+    let dateString = date.toLocaleDateString('en-CA')
+    if (!dates.includes(dateString)) {
+      dates.push(dateString)
+    }
+    date.setUTCDate(date.getUTCDate() + 1)
+    date.setUTCHours(1)
   }
-
-  const uniqueDates = weekDates.map(date => date.toISOString().split('T')[0])
   let uniqueSpaces = [...new Set(processedEvents.map(event => event.spaceName))]
   daysOfWeekChartData.value = {
-    labels: uniqueDates,
+    labels: dates,
     datasets: uniqueSpaces.map(space => {
       let spaceEvents = processedEvents.filter(event => event.spaceName === space)
-      let spaceEventsDuration = uniqueDates.map(date => {
+      let spaceEventsDuration = dates.map(date => {
         let dateEvents = spaceEvents.filter(event => event.startDate === date)
         return dateEvents.reduce((accumulator, currentValue) => accumulator + currentValue.durationInHours, 0)
       })
@@ -163,25 +149,6 @@ async function buildDaysOfWeekChart(processedEvents) {
   }
 }
 
-async function buildGoalsCharts(processedEvents) {
-  // Build a chart for each space, all but them to the goalsCharts object
-  // console.log(spaces.value)
-  for(let space of spaces.value) {
-    // console.log(space)
-    let spaceEvents = processedEvents.filter(event => event.spaceName === space)
-    let spaceEventsDuration = spaceEvents.reduce((accumulator, currentValue) => accumulator + currentValue.durationInHours, 0)
-    goalCharts[space] = {
-      labels: [space],
-      datasets: [{
-        label: space,
-        data: [spaceEventsDuration],
-        backgroundColor: [space.color],
-        borderWidth: 0
-      }]
-    }
-  }
-  // console.log(goalCharts)
-}
 
 // Week chart
 // TODO: The week doughnut chart is not being emptied when the week changes, so the totals keep adding up.
@@ -216,37 +183,41 @@ async function buildWeekChart(processedEvents) {
 <template>
   <Transition name="time-tracking-statistics">
     <div v-show="open"
-         class="time-tracking-statistics select-none flex fixed top-0 inset-x-0 bg-white z-10 shadow-inner drop-shadow-xl h-[500px]">
-
-      <!-- START: Loading state
-      TODO: Implement this
+         class="time-tracking-statistics select-none bg-white flex fixed top-0 inset-x-0 bg-white z-10 shadow-inner drop-shadow-xl h-[500px]">
+      <!-- TODO: Implement this -->
+      <!-- START: Loading state -->
       <div v-if="loading" class="self-center w-full text-center">
         Hold on, fetching time tracking data from workspace...
       </div>
-      -->
-      <!-- START: Empty state
-      TODO: Implement this
-      <div v-if="!loading" class="self-center w-full text-center">
-        Looks like no data could be found for this workspace.
+
+      <!-- START: Empty state -->
+      <div v-if="!loading && !events.length" class="self-center w-full text-center">
+        Looks like no data could be found for week.
       </div>
-      -->
 
-      <div v-if="!loading"
-           class="items-end h-full w-full pl-3 pb-1 overflow-x-scroll align-text-top grid grid-rows-2 gap-1 statistics-container">
 
-        <div class="grid grid-cols-3 gap-4">
-          <div class="chart-container">
-            <Doughnut :data="weekChartData" :options="weekChartOptions" :style="weekChartStyles"
-                      :plugins="[weekChartPlugins]"/>
-          </div>
-          <div class="col-span-2 chart-container">
-            <div v-for="(chart, index) in goalCharts" :key="index">
-              <Bar :data="chart" :options="goalsChartOptions" :style="goalsChartStyles"/>
+      <div v-if="!loading && events.length" class="self-center w-full text-center">
+        <div
+            class="items-end h-full w-full pl-3 pb-1 overflow-x-scroll align-text-top grid grid-rows-2 gap-1 statistics-container">
+          <div class="grid grid-cols-3 gap-4">
+            <div class="chart-container">
+              <Doughnut :data="weekChartData" :options="weekChartOptions" :style="weekChartStyles"
+                        :plugins="[weekChartPlugins]"/>
+            </div>
+            <div class="col-span-2 chart-container bg-white border rounded-lg shadow-sm mr-2.5">
+              <label class="absolute bg-white px-1.5 -left-0.5 -top-3">Goals</label>
+              <GoalGraph
+                  v-for="(goal, index) in goals"
+                  :key="index"
+                  :goal="goal"
+                  :start_date="this.start_date"
+                  :end_date="this.end_date"
+              />
             </div>
           </div>
-        </div>
-        <div class="">
-          <Bar :data="daysOfWeekChartData" :options="daysOfWeekChartOptions" :style="daysOfWeekChartStyles"/>
+          <div class="">
+            <Bar :data="daysOfWeekChartData" :options="daysOfWeekChartOptions" :style="daysOfWeekChartStyles"/>
+          </div>
         </div>
       </div>
     </div>
@@ -255,7 +226,6 @@ async function buildWeekChart(processedEvents) {
 
 <style>
 .time-tracking-statistics {
-  background: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   -webkit-app-region: drag;
@@ -282,8 +252,7 @@ async function buildWeekChart(processedEvents) {
 
 .chart-container {
   position: relative;
-  width: 100%;
-  height: 225px;
+  height: 210px;
   display: flex;
   justify-content: center;
   align-items: center;
