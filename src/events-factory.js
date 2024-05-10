@@ -51,8 +51,10 @@ export default {
         // first function used to determine the class of the entry. But it seems that this object is empty. Don't know
         // why. Therefore i have to get the space id from an api call.
         if (!remote.class) {
-            let space_id = await clickupService.getSpaceIdFromTask(remote.task.id)
-            remote.class = 'space-' + space_id
+            await clickupService.getTask(remote.task.id, true).then(task => {
+                let space_id = task.space.id
+                remote.class = 'space-' + space_id
+            })
         }
         return Object.assign(original, {
             entryId: remote.id,

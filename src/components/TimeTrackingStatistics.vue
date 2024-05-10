@@ -1,5 +1,5 @@
 <script setup>
-import {onMounted, ref, watch} from "vue"
+import {ref, watch, watchEffect} from "vue"
 import clickupService from "@/clickup-service";
 import {ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip} from 'chart.js'
 import {Bar, Doughnut} from 'vue-chartjs'
@@ -70,17 +70,6 @@ let weekChartPlugins = {
   }
 };
 
-// Globals
-let spaces = []
-
-onMounted(() => {
-  clickupService.getSpaces().then(found_spaces => {
-    spaces.value = found_spaces
-  }).catch(error => {
-    console.error(error)
-  })
-})
-
 watch(() => props.open, open => {
   const vueCalRoots = document.getElementsByClassName('vuecal')
   if (!vueCalRoots.length) return;
@@ -90,20 +79,25 @@ watch(() => props.open, open => {
   return vueCalRoots[0].classList.remove('vuecal--time-tracking-statistics-open')
 })
 
-watch(() => props.events, events => {
-  loading.value = true;
-  if (!events.length) {
-    daysOfWeekChartData.value = {datasets: []}
-    weekChartData.value = {datasets: []}
-    loading.value = false;
-    return;
+watchEffect(async () => {
+  if (props.open && props.events.length && props.start_date && props.end_date) {
+    console.log(props)
+    loading.value = true
+    await onCreate()
+    loading.value = false
   }
-  buildEventsData(events).then(() => loading.value = false)
-})
+});
 
-async function buildEventsData(events) {
+async function onCreate() {
+
+  clickupService.getSpaces().then(spaces => {
+    buildEventsData(props.events, spaces)
+  })
+}
+
+async function buildEventsData(events, spaces) {
   await Promise.all(events.map(async event => {
-    let foundSpace = spaces.value.find(space => space.id === event.spaceId);
+    let foundSpace = spaces.find(space => space.id === event.spaceId);
     return {
       spaceName: (foundSpace) ? foundSpace.name : "Unknown space",
       color: (foundSpace) ? foundSpace.color : "#ADD8E67F",
@@ -186,8 +180,8 @@ async function buildWeekChart(processedEvents) {
          class="time-tracking-statistics select-none bg-white flex fixed top-0 inset-x-0 bg-white z-10 shadow-inner drop-shadow-xl h-[500px]">
       <!-- TODO: Implement this -->
       <!-- START: Loading state -->
-      <div v-if="loading" class="self-center w-full text-center">
-        Hold on, fetching time tracking data from workspace...
+      <div v-if="loading" class="flex justify-center items-center h-full w-full">
+        <img class="animate-pulse w-30 h-30" src="@/assets/images/wave.gif" alt="Wave animation">
       </div>
 
       <!-- START: Empty state -->
@@ -210,8 +204,8 @@ async function buildWeekChart(processedEvents) {
                   v-for="(goal, index) in goals"
                   :key="index"
                   :goal="goal"
-                  :start_date="this.start_date"
-                  :end_date="this.end_date"
+                  :start_date="props.start_date"
+                  :end_date="props.end_date"
               />
             </div>
           </div>

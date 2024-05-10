@@ -1,6 +1,6 @@
 <script setup>
 import {Bar} from "vue-chartjs";
-import {onMounted, ref} from "vue";
+import {ref, watchEffect} from "vue";
 import {BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip} from "chart.js";
 import {ClickUpType} from "@/model/ClickUpModels";
 import clickupService from "@/clickup-service";
@@ -47,10 +47,8 @@ let goalsChartStyles = ref({
   width: '130px',
 })
 
-onMounted( () => {
-  if (props.goal === undefined) {
-    failed.value = true
-  } else {
+watchEffect(async () => {
+  if (props.start_date && props.end_date && props.goal) {
     loading.value = true
     fillGraphDataSet(props.goal.clickUpId, props.goal.type).then(() => {
       loading.value = false
@@ -60,6 +58,8 @@ onMounted( () => {
       failed.value = true
       loading.value = false
     })
+  } else {
+    failed.value = true
   }
 })
 
@@ -71,6 +71,10 @@ async function fillGraphDataSet(clickUpId, clickUpType){
 
   if (timeTrackingData === undefined || goalTargetData === undefined){
     throw "Data from ClickUp is undefined"
+  }
+
+  if (props.start_date === undefined || props.end_date === undefined){
+    throw "Dates are nog provided"
   }
 
   let totalTime = 0

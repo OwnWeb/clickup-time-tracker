@@ -40,10 +40,10 @@
       @view-change="handleDateChange"
       @event-drop="updateTimeTrackingEntry"
       @event-duration-change="updateTimeTrackingEntry"
-      @keydown.meta.delete.exact="deleteSelectedTask()"
-      @keydown.meta.v.exact="duplicateSelectedTask()"
-      @keydown.meta.d.exact="duplicateSelectedTask()"
-      @keydown.meta.x.exact="refreshBackgroundImage()"
+      @keydown.ctrl.delete.exact="deleteSelectedTask()"
+      @keydown.ctrl.v.exact="duplicateSelectedTask()"
+      @keydown.ctrl.d.exact="duplicateSelectedTask()"
+      @keydown.ctrl.x.exact="refreshBackgroundImage()"
   >
     <template v-slot:title="{ title }">
       <div class="flex items-center space-x-4">
@@ -321,6 +321,9 @@ export default {
       statisticsOpen: ref(false),
       selectedTask: ref({}),
 
+      start_date: ref(new Date()),
+      end_date: ref(new Date()),
+
       rules: ref({
         task: {
           taskId: {
@@ -347,6 +350,11 @@ export default {
         }
       }
     };
+  },
+
+  created() {
+    this.start_date = new Date(); // set your start date here
+    this.end_date = new Date(); // set your end date here
   },
 
   async mounted() {
@@ -390,6 +398,7 @@ export default {
     */
     async handleDateChange({startDate, endDate}) {
       if ((!startDate && startDate === undefined) || (!endDate && endDate === undefined)) return;
+      console.log(startDate + " " + endDate)
       this.start_date = startDate
       this.end_date = endDate
 
@@ -402,7 +411,6 @@ export default {
       if (store.get("settings.custom_color_enabled")) {
         customColorEnabled = store.get("settings.custom_color_enabled")
       }
-      console.log(startDate, endDate)
       clickupService
           .getTimeTrackingRange(startDate, endDate)
           .then(entries => {
@@ -444,8 +452,7 @@ export default {
       return this.selectedTask;
     },
 
-    duplicateSelectedTask() {
-      clickupService
+    duplicateSelectedTask() {clickupService
           .createTimeTrackingEntry(
               this.selectedTask.taskId,
               this.selectedTask.description,
@@ -546,6 +553,8 @@ export default {
     */
 
     updateTimeTrackingEntry({event, originalEvent}) {
+      this.statisticsOpen = false;
+
       clickupService.updateTimeTrackingEntry(
           event.entryId,
           event.description,
@@ -653,9 +662,6 @@ export default {
     colorPaletteToStyleClasses: async function () {
       let classes = '';
       return clickupService.getColorsBySpace().then(colorPalette => {
-        // console.log("ColorPalette: ")
-        // console.log(colorPalette)
-
         colorPalette.forEach((value, key) => {
           classes += `
           .space-${key} {

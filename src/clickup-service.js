@@ -370,7 +370,7 @@ export default {
         return tasks
     },
 
-    async getTask(taskId) {
+    async getTask(taskId, raw = false) {
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
@@ -385,7 +385,9 @@ export default {
                 resolve(JSON.parse(response.body) || [])
             });
         }).then(task => {
-            task = factory.createTask(task)
+            if (!raw) {
+                task = factory.createTask(task)
+            }
             return task
         }).catch(e => {
             console.error(e)
@@ -403,14 +405,6 @@ export default {
                 })
             }
             return colors
-        }).catch(e => {
-            console.error(e)
-        })
-    },
-
-    async getSpaceIdFromTask(taskId) {
-        await this.getTask(taskId).then(task => {
-            return task.space.id
         }).catch(e => {
             console.error(e)
         })
@@ -483,7 +477,13 @@ export default {
                 })
             }, (error, response) => {
                 if (error) return reject(error)
-                resolve(JSON.parse(response.body).data)
+                const body = JSON.parse(response.body)
+
+                if (body.error) {
+                    reject(body.err)
+                }
+
+                resolve(body.data[0])
             })
         })
     },
@@ -508,7 +508,13 @@ export default {
                 })
             }, (error, response) => {
                 if (error) return reject(error)
-                resolve(JSON.parse(response.body).data[0])
+                const body = JSON.parse(response.body)
+
+                if (body.error) {
+                    reject(body.err)
+                }
+
+                resolve(body.data[0])
             })
         })
     },
