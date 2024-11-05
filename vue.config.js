@@ -37,11 +37,11 @@ module.exports = {
 
                 linux: {
                     target: ["AppImage"],
-                    executableName: 'Time Tracker',
+                    executableName: 'ClickUp Time Tracker',
                 },
 
                 appId: 'nl.gwleuverink.clickup-time-tracker',
-                afterSign: './notarize.js'
+                // afterSign: './notarize.js'
             }
         }
     },
