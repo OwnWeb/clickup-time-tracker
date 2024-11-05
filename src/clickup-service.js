@@ -20,6 +20,8 @@ function teamRootUrl() {
 }
 
 export default {
+    requests: 0,
+
 
     /*
      * Checks if the given token is valid by making a request to the user endpoint.
@@ -46,66 +48,98 @@ export default {
         })
     },
 
+    // Timeout and retry wrapper function
+    async withTimeoutAndRetry(fn, timeout = 5000, retries = 5, retryDelay = 1000) {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                return await Promise.race([
+                    fn(),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout)
+                    )
+                ]);
+            } catch (error) {
+                console.error(`Attempt ${attempt} failed: ${error.message}`);
+                if (attempt === retries) {
+                    console.error(`Max retries reached for ${fn.name}`);
+                    return []; // Return an empty result after max retries
+                }
+                await new Promise(resolve => setTimeout(resolve, retryDelay * attempt)); // Optional delay before retry
+            }
+        }
+    },
+
     /*
      * Builds a hierarchy of spaces, folders, lists, tasks and subtasks, from a team.
      * Can be used to display the treeview options.
      */
     async getHierarchy() {
+        this.requests = 0;
+        console.log("Getting hierarchy from ClickUp")
         const spaces = await this.getSpaces().catch(e => {
             console.error(e)
         })
         try {
+            console.log(`Got ${spaces.length} spaces from ClickUp (${this.requests} rq)`);
             if (spaces.length > 0) {
                 await Promise.all(spaces.map(async (space) => {
-                    const folders = await this.getFolders(space.id).catch(e => {
-                        console.error(e)
-                    })
+                    console.log(`Getting folders and lists for space ${space.name} (${this.requests} rq)`);
+
+                    // Fetch folders with retry and timeout logic
+                    const folders = await this.withTimeoutAndRetry(() => this.getFolders(space.id)).catch(e => {
+                        console.error(e);
+                        return [];
+                    });
+                    console.log(`Got ${folders.length} folders for space ${space.name} (${this.requests} rq)`);
+
                     if (folders.length > 0) {
                         await Promise.all(folders.map(async (folder) => {
-                            const folderdlLists = await this.getFolderedLists(folder.id).catch(e => {
-                                console.error(e)
-                            })
-                            if (folderdlLists.length > 0) {
-                                await Promise.all(folderdlLists.map(async (folderdlList) => {
-                                    const tasks = await this.getTasksFromList(folderdlList.id).catch(e => {
-                                        console.error(e)
-                                    })
-                                    folderdlList.addChildren(tasks)
-                                })).catch(e => {
-                                    console.error(e)
-                                })
-                                folder.addChildren(folderdlLists)
+                            const folderLists = await this.withTimeoutAndRetry(() => this.getFolderedLists(folder.id)).catch(e => {
+                                console.error(e);
+                                return [];
+                            });
+                            console.log(`Got ${folderLists.length} lists for folder ${folder.name} (${this.requests} rq)`);
+
+                            if (folderLists.length > 0) {
+                                await Promise.all(folderLists.map(async (folderList) => {
+                                    const tasks = await this.withTimeoutAndRetry(() => this.getTasksFromList(folderList.id)).catch(e => {
+                                        console.error(e);
+                                        return [];
+                                    });
+                                    console.log(`Got ${tasks.length} tasks for list ${folderList.name} (${this.requests} rq)`);
+                                    folderList.addChildren(tasks);
+                                })).catch(e => console.error(e));
+                                folder.addChildren(folderLists);
                             }
-                        })).catch(e => {
-                            console.error(e)
-                        })
-                        space.addChildren(folders)
+                        })).catch(e => console.error(e));
+                        space.addChildren(folders);
                     }
 
-                    const lists = await this.getLists(space.id).catch(e => {
-                        console.error(e)
-                    })
+                    // Fetch lists directly in space with retry and timeout logic
+                    const lists = await this.withTimeoutAndRetry(() => this.getLists(space.id)).catch(e => {
+                        console.error(e);
+                        return [];
+                    });
+                    console.log(`Got ${lists.length} lists for space ${space.name} (${this.requests} rq)`);
+
                     if (lists.length > 0) {
                         await Promise.all(lists.map(async (list) => {
-                            const tasks = await this.getTasksFromList(list.id).catch(e => {
-                                console.error(e)
-                            })
-                            if (tasks.length > 0) {
-                                list.addChildren(tasks);
-                            }
-                        })).catch(e => {
-                            console.error(e)
-                        })
-                        space.addChildren(lists)
+                            const tasks = await this.withTimeoutAndRetry(() => this.getTasksFromList(list.id)).catch(e => {
+                                console.error(e);
+                                return [];
+                            });
+                            console.log(`Got ${tasks.length} tasks for list ${list.name} (${this.requests} rq)`);
+                            list.addChildren(tasks);
+                        })).catch(e => console.error(e));
+                        space.addChildren(lists);
                     }
-                })).catch(e => {
-                    console.error(e)
-                })
-                return spaces
+                })).catch(e => console.error(e));
+                return spaces;
             }
         } catch (e) {
-            console.error(e)
+            console.error(e);
         }
+
     },
 
     async getCachedHierarchy() {
@@ -153,6 +187,7 @@ export default {
     * Get all spaces from a team
      */
     async getSpaces() {
+        this.requests++;
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
@@ -204,6 +239,7 @@ export default {
     * Get all folders from a space
     */
     async getFolders(spaceId) {
+        this.requests++;
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
@@ -230,6 +266,7 @@ export default {
     * Get all lists from a folder
     */
     async getFolderedLists(FolderId) {
+        this.requests++;
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
@@ -271,6 +308,7 @@ export default {
         })
     },
     async getLists(spaceId) {
+        this.requests++;
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
@@ -298,6 +336,7 @@ export default {
      */
     async getTasksFromList(listId) {
 
+        this.requests++;
         let results = await new Promise((resolve, reject) => {
 
             request({
@@ -322,7 +361,7 @@ export default {
         let tasks = []
         let loop_counter = 0
         //console.log(results)
-        while (results.length > 0 && loop_counter < 1000) {
+        while (results.length > 0 && loop_counter < 2000) {
             loop_counter = loop_counter + 1
             let task = results.pop()
             if (task.parent != null) {
@@ -354,10 +393,10 @@ export default {
 
         }
 
-        if (loop_counter >= 1000) {
+        if (loop_counter >= 10000) {
             console.log(`Some parents tasks where not found fetching the task for list ${listId}`)
             console.log('List of orphaned tasks:')
-            console.log(results)
+            // console.log(results)
         }
 
         tasks.sort(function (a, b) {
