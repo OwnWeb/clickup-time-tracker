@@ -141,10 +141,6 @@ function createTask() {
       })
     } else {
       pushToClickup()
-      onSuccess({
-        title: 'Task created',
-        content: 'The task has been created in Clickup',
-      });
 
     }
   })
@@ -157,8 +153,18 @@ function createTask() {
         props.end
     ).then(entry => {
       pushEntryToCalendar(entry);
+
+      onSuccess({
+        title: 'Task created',
+        content: 'The task has been created in Clickup',
+      });
     }).catch(error => {
           cancelTaskCreation()
+          onError({
+            error,
+            title: "Looks like something went wrong",
+            content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
+          })
           this.error({
             error,
             title: "Looks like something went wrong",

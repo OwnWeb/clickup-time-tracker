@@ -8,6 +8,7 @@ const BASE_URL = 'https://api.clickup.com/api/v2';
 // Cache keys
 const HIERARCHY_CACHE_KEY = 'hierarchy';
 const USERS_CACHE_KEY = 'users';
+const DEFAULT_CLICKUP_TIMEOUT = 3000;
 
 // Factory
 // The factory is used to create the correct model objects from the API response.
@@ -513,7 +514,8 @@ export default {
                     "tid": taskId,
                     "start": start.valueOf(),
                     "duration": end.valueOf() - start.valueOf(),
-                })
+                }),
+                timeout: DEFAULT_CLICKUP_TIMEOUT,
             }, (error, response) => {
                 if (error) return reject(error)
                 const body = JSON.parse(response.body)
@@ -522,7 +524,7 @@ export default {
                     reject(body.err)
                 }
 
-                resolve(body.data[0])
+                resolve(body.data[0] !== null ? body.data[0] : body.data)
             })
         })
     },
@@ -544,7 +546,8 @@ export default {
                     description,
                     "start": start.valueOf(),
                     "duration": end.valueOf() - start.valueOf(),
-                })
+                }),
+                timeout: DEFAULT_CLICKUP_TIMEOUT,
             }, (error, response) => {
                 if (error) return reject(error)
                 const body = JSON.parse(response.body)
@@ -570,7 +573,8 @@ export default {
                 headers: {
                     'Authorization': store.get('settings.clickup_access_token'),
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: DEFAULT_CLICKUP_TIMEOUT
             }, (error, response) => {
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body).data[0])
