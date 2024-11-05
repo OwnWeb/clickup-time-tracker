@@ -36,7 +36,12 @@ module.exports = {
                 },
 
                 linux: {
-                    target: ["AppImage"],
+                    "target": [
+                        {
+                            "target": "AppImage",
+                            "arch": ["x64"]
+                        },
+                    ],
                     executableName: 'ClickUp Time Tracker',
                 },
 
