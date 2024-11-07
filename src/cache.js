@@ -38,8 +38,8 @@ export default {
         return store.get(`cache.values.${key}`) || defaultValue;
     },
 
-    put: function(key, value, expiresAfterMinutes) {
-        const expiresAt = (Date.now() / 1000) + expiresAfterMinutes
+    put: function(key, value, expiresAfterSeconds) {
+        const expiresAt = (Date.now() / 1000) + expiresAfterSeconds
 
         store.set(`cache.expires_at.${key}`, expiresAt)
         store.set(`cache.values.${key}`, value)

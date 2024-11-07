@@ -524,7 +524,7 @@ export default {
                     reject(body.err)
                 }
 
-                resolve(body.data[0] !== null ? body.data[0] : body.data)
+                resolve(typeof (body.data[0]) !== 'undefined' ? body.data[0] : body.data)
             })
         })
     },
