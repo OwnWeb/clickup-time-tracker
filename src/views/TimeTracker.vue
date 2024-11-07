@@ -110,13 +110,38 @@
         <n-popover :delay="500" :duration="60" trigger="hover" width="260">
 
           <template #trigger>
-                    <span class="vuecal__event-task-info-popover absolute top-0 right-0 py-0.5 px-1 cursor-pointer">
-                        <information-circle-icon class="w-4 text-blue-300 transition-all hover:scale-125"/>
-                    </span>
+            <div class="vuecal__event-task-info-popover absolute top-0 right-0 py-0.5 px-1 cursor-pointer flex">
+              <information-circle-icon class="w-5 transition-all hover:scale-125"/>
+
+              <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700  hover:scale-125"
+                      @click="shell.openExternal(event.taskUrl)">
+                <img alt="Open task in ClickUp" class="mt-1 w-6" src="@/assets/images/white-rounded-logo.svg">
+              </button>
+            </div>
           </template>
 
           <template #header>
-            <span class="font-semibold text-gray-700" v-text="event.title"></span>
+            <div class="flex justify-between">
+              <span class="font-semibold text-gray-700" v-text="event.title"></span>
+              <n-popconfirm
+                  v-if="selectedTask.deletable"
+                  :negative-text="null"
+                  :show-icon="false"
+                  positive-text="delete"
+                  @positive-click="deleteSelectedTask"
+              >
+                <template #trigger>
+                  <n-button circle secondary type="error">
+                    <n-icon name="delete-tracking-entry" size="18">
+                      <trash-icon/>
+                    </n-icon>
+                  </n-button>
+                </template>
+
+                Confirm deletion of time entry for
+                <div class="font-bold">{{ event.title }}</div>
+              </n-popconfirm>
+            </div>
           </template>
 
           <span class="whitespace-pre-wrap" v-text="event.description"></span>
@@ -134,7 +159,6 @@
             <pencil-icon class="w-4 mx-1.5"/>
             <span>Open details</span>
           </button>
-
         </n-popover>
         <!-- END | Task context popover -->
       </div>
@@ -214,6 +238,14 @@
       <n-space vertical>
         <!-- TODO: Show some task labels -->
         <!-- TODO: Show current task column -->
+
+        <!-- show time values -->
+        <n-space>
+          <n-icon name="clock" size="20">
+            <clock-icon/>
+          </n-icon>
+          <span>{{ selectedTask.start.formatTime('HH:mm') }} - {{ selectedTask.end.formatTime('HH:mm') }}</span>
+        </n-space>
 
         <n-form ref="editForm" :model="selectedTask" :rules="rules.task" size="large">
           <n-form-item :show-label="false" path="description">
@@ -452,7 +484,8 @@ export default {
       return this.selectedTask;
     },
 
-    duplicateSelectedTask() {clickupService
+    duplicateSelectedTask() {
+      clickupService
           .createTimeTrackingEntry(
               this.selectedTask.taskId,
               this.selectedTask.description,
