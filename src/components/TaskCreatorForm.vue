@@ -291,10 +291,8 @@ onMounted(async () => {
                   ? 'Loading tasks...'
                   : 'Select a task or subtask'
               "
-
               :size="'large'"
               :clearable="true"
-              :expand-trigger="'hover'"
               :filterable="true"
               :key-field="'value'"
               :disabled-field="'disable'"
@@ -303,7 +301,6 @@ onMounted(async () => {
 
         </n-config-provider>
       </n-form-item>
-
       <!-- Refresh button -->
       <n-button
           :disabled="loadingClickup"

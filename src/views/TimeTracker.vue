@@ -47,7 +47,7 @@
   >
     <template v-slot:title="{ title }">
       <div class="flex items-center space-x-4">
-        <span aria-label="false" type="false">{{ title }}</span>
+        <span aria-label="false" type="false">{{ title }} · {{ totalHoursOnDate(events) }}</span>
 
         <!-- START | Extra controls -->
         <div
@@ -94,7 +94,7 @@
             class="inline-flex items-center ml-2 text-xs text-gray-600 space-x-[2px]"
         >
           <clock-icon class="w-3 -mt-0.5"/>
-          <span class="italic">{{ totalHoursOnDate(heading.date, view.events) }}</span>
+          <span class="italic">{{ totalHoursOnDate(view.events, heading.date) }}</span>
         </div>
 
       </div>
@@ -209,7 +209,7 @@
         class="max-w-xl"
         role="dialog"
         size="huge"
-        title="Edit tracking entry"
+        :title="selectedTask.title"
     >
       <template #header>
         <span class="flex items-center space-x-3">
@@ -626,10 +626,17 @@ export default {
     | MISC & EASTER EGG LAND
     |--------------------------------------------------------------------------
     */
-    totalHoursOnDate(date, events) {
-      let totalMinutes = events
-          .filter(event => event.start.getDate() == date.getDate())
-          .reduce((carry, event) => carry + (event.endTimeMinutes - event.startTimeMinutes), 0)
+    totalHoursOnDate(events, date) {
+      let noDate = typeof date === 'undefined';
+      const filteredEvents = noDate ? events : events.filter(event => event.start.getDate() == date.getDate())
+
+      let totalMinutes = filteredEvents.reduce((carry, event) => {
+        const startTimestamp = new Date(event.start).getTime();
+        const endTimestamp = new Date(event.end).getTime();
+        const durationMinutes = (endTimestamp - startTimestamp) / 60000;
+        return carry + durationMinutes;
+      }, 0);
+
 
       let hours = Math.floor(totalMinutes / 60)
       let minutes = totalMinutes % 60
