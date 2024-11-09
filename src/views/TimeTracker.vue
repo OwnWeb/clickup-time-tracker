@@ -607,6 +607,10 @@ export default {
               this.events[eventIndex] = updatedEvent
             })
             console.dir(`Updated time tracking entry for: ${entry.task.name}`);
+            this.success({
+              title: "Update successful",
+              content: "Time tracking entry was updated successfully"
+            });
           })
           .catch(error => {
             this.error({

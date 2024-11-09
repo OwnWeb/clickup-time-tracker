@@ -65,6 +65,10 @@ export default {
   opacity: 0.9;
 }
 
+.n-notification-container .n-notification.n-notification--closable .n-notification__close {
+  z-index: 1;
+}
+
 .n-button {
     background-color: var(--n-color);
 }
