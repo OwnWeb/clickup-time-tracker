@@ -7,6 +7,8 @@ import {h, onMounted, ref, defineEmits} from "vue";
 import {ipcRenderer} from 'electron';
 import clickupService from "@/clickup-service";
 import store from "@/store";
+import removeAccents from 'remove-accents';
+
 
 const props = defineProps({
   start: {
@@ -252,6 +254,14 @@ function renderSwitcherIcon(option) {
   return h(NIcon, { size: '15px', id: 'cascader-icon', color: color }, { default: () => h(icon) })
 }
 
+function filter(string, option) {
+  return normalize(option.label).includes(normalize(string));
+}
+
+function normalize(string) {
+  return removeAccents(string.toLowerCase()).trim()
+}
+
 /*
 |--------------------------------------------------------------------------
 | MAIN
@@ -294,6 +304,7 @@ onMounted(async () => {
               :size="'large'"
               :clearable="true"
               :filterable="true"
+              :filter="filter"
               :key-field="'value'"
               :disabled-field="'disable'"
               :render-prefix="renderSwitcherIcon"
