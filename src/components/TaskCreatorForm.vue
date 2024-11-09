@@ -1,13 +1,26 @@
 <script setup>
-import {NAvatar, NButton, NForm, NIcon, NMention, NH1, NTreeSelect, NFormItem, useNotification, NConfigProvider} from "naive-ui";
-import {ArrowPathIcon} from "@heroicons/vue/20/solid";
-import {Planet, List, Folder} from '@vicons/ionicons5'
+import {
+  NAvatar,
+  NButton,
+  NConfigProvider,
+  NForm,
+  NFormItem,
+  NH1,
+  NIcon,
+  NMention,
+  NTreeSelect,
+  useNotification,
+} from "naive-ui";
+import {ArrowPathIcon, ArrowTurnDownRightIcon} from "@heroicons/vue/20/solid";
+import {DocumentCheckIcon} from "@heroicons/vue/24/outline";
+import {Folder, List, Planet} from '@vicons/ionicons5'
 import {CircleFilled} from "@vicons/carbon";
-import {h, onMounted, ref, defineEmits} from "vue";
+import {computed, defineEmits, h, onMounted, ref} from "vue";
 import {ipcRenderer} from 'electron';
 import clickupService from "@/clickup-service";
 import store from "@/store";
 import removeAccents from 'remove-accents';
+import {cloneDeep} from "lodash";
 
 
 const props = defineProps({
@@ -30,6 +43,8 @@ const emit = defineEmits(['close', 'create']);
 let clickUpItems = ref([]);
 let loadingClickup = ref(false);
 let mentionable = ref([]);
+const withClosed = ref(false);
+const withSubtasks = ref(false);
 
 let createForm = ref(null);
 
@@ -52,6 +67,35 @@ const rules = ref({
       trigger: ['blur']
     },
   },
+})
+
+const filterRecursive = (items, withClosed, withSubtasks) => {
+  return items
+      .filter(item => {
+        if (item.children && Array.isArray(item.children)) {
+          // Filter children recursively
+          item.children = filterRecursive(item.children, withClosed, withSubtasks);
+          return true;
+        }
+
+        // Exclude subtasks if not allowed
+        if (!withSubtasks && item.type === 'subtask') {
+          return false;
+        }
+
+        // Exclude closed items if not allowed
+        if(!withClosed && item.date_closed !== null) {
+          return false;
+        }
+
+        return true;
+      });
+};
+
+
+
+const options = computed(() => {
+  return filterRecursive(cloneDeep(clickUpItems.value), withClosed.value, withSubtasks.value)
 })
 
 // Naive UI custom theme
@@ -161,18 +205,18 @@ function createTask() {
         content: 'The task has been created in Clickup',
       });
     }).catch(error => {
-          cancelTaskCreation()
-          onError({
-            error,
-            title: "Looks like something went wrong",
-            content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
-          })
-          this.error({
-            error,
-            title: "Looks like something went wrong",
-            content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
-          });
-        });
+      cancelTaskCreation()
+      onError({
+        error,
+        title: "Looks like something went wrong",
+        content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
+      })
+      this.error({
+        error,
+        title: "Looks like something went wrong",
+        content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
+      });
+    });
   }
 }
 
@@ -251,7 +295,7 @@ function renderSwitcherIcon(option) {
       break;
   }
 
-  return h(NIcon, { size: '15px', id: 'cascader-icon', color: color }, { default: () => h(icon) })
+  return h(NIcon, {size: '15px', id: 'cascader-icon', color: color}, {default: () => h(icon)})
 }
 
 function filter(string, option) {
@@ -294,7 +338,7 @@ onMounted(async () => {
         <n-config-provider class="flex-grow" :theme-overrides="customTheme">
           <n-tree-select
               v-model:value="formValue.task.taskId"
-              :options="clickUpItems"
+              :options="options"
               :disabled="loadingClickup"
               :placeholder="
                 loadingClickup
@@ -308,7 +352,32 @@ onMounted(async () => {
               :key-field="'value'"
               :disabled-field="'disable'"
               :render-prefix="renderSwitcherIcon"
-          />
+          >
+            <template #header>
+              <div class="flex space-x-2">
+                Filters &nbsp;
+                <div class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex color-gray-600 hover:bg-gray-200 cursor-pointer p-1 text-xs flex justify-center border  rounded-r-2xl px-2"
+                     @click="withClosed = !withClosed"
+                     :class="withClosed ? 'bg-green-200 accent-green-600 border-green-600 hover:bg-green-300' : 'transparent border-transparent'"
+                >
+                  <n-icon class="flex items-center justify-center mr-1" name="arrow" size="14">
+                    <document-check-icon />
+                  </n-icon>
+                  Closed
+                </div>
+                <div class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex color-gray-600 hover:bg-gray-200 cursor-pointer p-1 text-xs flex justify-center border  rounded-r-2xl px-2"
+                     @click="withSubtasks = !withSubtasks"
+                     :class="withSubtasks ? 'bg-green-200 accent-green-600 border-green-600 hover:bg-green-300' : 'transparent border-transparent'"
+                >
+                  <n-icon class="flex items-center justify-center mr-1" name="arrow" size="14">
+                    <arrow-turn-down-right-icon/>
+                  </n-icon>
+                  Subtasks
+                </div>
+              </div>
+            </template>
+
+          </n-tree-select>
 
         </n-config-provider>
       </n-form-item>

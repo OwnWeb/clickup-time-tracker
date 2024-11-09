@@ -24,7 +24,7 @@ export class ClickUpItemFactory {
         // Create item
         if (typeof item === "object"){
             // This is the only place where clickup items are created
-            return new ClickUpItem(item.id, item.name, type, item.color);
+            return new ClickUpItem(item, type);
         }
         throw new Error("Invalid item");
     }
@@ -52,16 +52,16 @@ export class ClickUpItemFactory {
 }
 export class ClickUpItem{
     // This is the only place where the clickup item is defined
-    constructor(id, name, type, color){
+    constructor(item, type){
         if (!Object.values(ClickUpType).includes(type)){
             throw new Error("Invalid type");
         }
 
-        this.id = id;
-        this.value = id;
+        this.id = item.id;
+        this.value = item.id;
 
-        this.name = name;
-        this.label = name;
+        this.name = item.name;
+        this.label = item.name;
 
         this.type = type;
 
@@ -77,13 +77,15 @@ export class ClickUpItem{
                 break;
             case ClickUpType.TASK:
                 this.disable = false;
+                this.date_closed = item.date_closed;
                 break;
             case ClickUpType.SUBTASK:
                 this.disable = false;
+                this.date_closed = item.date_closed;
                 break;
         }
 
-        this.color = color;
+        this.color = item.color;
     }
 
     addChild(child){

@@ -213,7 +213,7 @@ export default {
         })
     },
 
-    async getFolder(folderId){
+    async getFolder(folderId) {
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
@@ -288,7 +288,7 @@ export default {
         })
     },
 
-    async getList(listId){
+    async getList(listId) {
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
@@ -332,82 +332,93 @@ export default {
         })
     },
 
-    /*
-    * Get all tasks from a list
-     */
-    async getTasksFromList(listId) {
+    _assignSubtasksToParentTasks(results) {
+        // Map to store all tasks by their IDs
+        const taskMap = {};
 
-        this.requests++;
-        let results = await new Promise((resolve, reject) => {
+        // Array to store root-level tasks
+        const tasks = [];
 
-            request({
-                method: 'GET',
-                mode: 'no-cors',
-                url: `${BASE_URL}/list/${listId}/task?archived=false&include_markdown_description=false&subtasks=true&include_closed=false`,
-                headers: {
-                    'Authorization': store.get('settings.clickup_access_token'),
-                    'Content-Type': 'application/json'
-                }
-            }, (error, response) => {
-                if (error) return reject(error)
-                resolve(JSON.parse(response.body).tasks || [])
-            });
-        }).catch(e => {
-            console.error(e)
-        })
-
-        // Link subtasks to their parent
-        // It would be nice if the API would do this for us, but it doesn't. Nested list? Something? Anything?
-        // Maybe it could be done faster. I would like to see it, if someone can do it better. out of curiosity.
-        let tasks = []
-        let loop_counter = 0
-        //console.log(results)
-        while (results.length > 0 && loop_counter < 2000) {
-            loop_counter = loop_counter + 1
-            let task = results.pop()
-            if (task.parent != null) {
-                let addChildInChildren = function (children, task) {
-                    if (children) {
-                        if (children.some(child => child.id == task.parent)) {
-                            children.find(child => child.id == task.parent).addChild(factory.createSubtask(task))
-                            children.sort(function (a, b) {
-                                let textA = a.name.toUpperCase();
-                                let textB = b.name.toUpperCase();
-                                return (textA < textB) ? -1 : (textA > textB) ? 1 : 0;
-                            });
-                            return true
-                        } else {
-                            return children.some(child => addChildInChildren(child.children, task))
-                        }
-                    } else {
-                        return false
-                    }
-                }
-                if (addChildInChildren(tasks, task) === false) {
-                    results.unshift(task)
-                }
-            } else if (task.parent == null) {
-                tasks.push(factory.createTask(task))
-            } else {
-                results.unshift(task)
-            }
-
-        }
-
-        if (loop_counter >= 10000) {
-            console.log(`Some parents tasks where not found fetching the task for list ${listId}`)
-            console.log('List of orphaned tasks:')
-            // console.log(results)
-        }
-
-        tasks.sort(function (a, b) {
-            let textA = a.name.toUpperCase();
-            let textB = b.name.toUpperCase();
-            return (textA < textB) ? -1 : (textA > textB) ? 1 : 0;
+        // First pass: Create task and subtask objects and store them in taskMap
+        results.forEach(taskData => {
+            taskMap[taskData.id] = taskData.parent == null
+                ? factory.createTask(taskData)
+                : factory.createSubtask(taskData);
         });
 
+        // Second pass: Link subtasks to their parent tasks
+        results.forEach(taskData => {
+            const task = taskMap[taskData.id];
+            if (taskData.parent != null) {
+                const parentTask = taskMap[taskData.parent];
+                if (parentTask) {
+                    parentTask.addChild(task);
+                }
+            } else {
+                // Root-level task, add to tasks array
+                tasks.push(task);
+            }
+        });
 
-        return tasks
+        // Function to sort tasks and their subtasks alphabetically by name
+        const sortTasks = (tasks) => {
+            tasks.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+            tasks.forEach(task => {
+                if (typeof task.children !== 'undefined' && task.children.length > 0) {
+                    sortTasks(task.children);
+                }
+            });
+        };
+
+        // Sort the root tasks and their subtasks
+        sortTasks(tasks);
+
+        return tasks;
+    },
+    /*
+     * Get all tasks from a list, handling pagination
+     */
+    async getTasksFromList(listId) {
+        const tasks = [];
+        let page = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            this.requests++;
+
+            try {
+                const results = await new Promise((resolve, reject) => {
+                    request({
+                        method: 'GET',
+                        url: `${BASE_URL}/list/${listId}/task`,
+                        qs: {
+                            archived: false,
+                            include_markdown_description: false,
+                            subtasks: true,
+                            include_closed: true,
+                            page: page
+                        },
+                        headers: {
+                            'Authorization': store.get('settings.clickup_access_token'),
+                            'Content-Type': 'application/json'
+                        }
+                    }, (error, response) => {
+                        if (error) return reject(error);
+                        resolve(JSON.parse(response.body).tasks || []);
+                    });
+                });
+
+                tasks.push(...results);
+                hasMore = results.length === 100; // Continue if the page is full (100 tasks)
+                page++;
+
+            } catch (e) {
+                console.error(`Error fetching tasks for page ${page}:`, e);
+                hasMore = false; // Stop on error
+            }
+        }
+
+        return this._assignSubtasksToParentTasks(tasks);
     },
 
     async getTask(taskId, raw = false) {
@@ -415,7 +426,7 @@ export default {
             request({
                 method: 'GET',
                 mode: 'no-cors',
-                url: `${BASE_URL}/task/${taskId}?include_subtasks=false&include_markdown_description=false`,
+                url: `${BASE_URL}/task/${taskId}?include_subtasks=true&include_markdown_description=false`,
                 headers: {
                     'Authorization': store.get('settings.clickup_access_token'),
                     'Content-Type': 'application/json'

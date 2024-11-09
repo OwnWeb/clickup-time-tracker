@@ -47,7 +47,14 @@
   >
     <template v-slot:title="{ title }">
       <div class="flex items-center space-x-4">
-        <span aria-label="false" type="false">{{ title }} · {{ totalHoursOnDate(events) }}</span>
+        <span aria-label="false" type="false">
+          {{ title }}
+          <template v-if="events.length > 0">
+            <clock-icon class="w-3 ml-3 -mt-0.5 inline-block"/>
+            <span class="italic text-xs">{{ totalHoursOnDate(events) }}</span>
+
+          </template>
+        </span>
 
         <!-- START | Extra controls -->
         <div
