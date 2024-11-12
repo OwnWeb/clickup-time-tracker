@@ -1,283 +1,301 @@
 <template>
-  <member-selector
-      v-if="store.get('settings.admin_features_enabled')"
-      :open="memberSelectorOpen"
-  />
+  <div class="bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-200 min-h-screen">
+    <member-selector
+        v-if="store.get('settings.admin_features_enabled')"
+        :open="memberSelectorOpen"
+    />
 
-  <time-tracking-statistics
-      v-if="store.get('settings.enable_statistics')"
-      :open="statisticsOpen"
-      :events="this.events"
-      :start_date="this.start_date"
-      :end_date="this.end_date"
-  />
+    <time-tracking-statistics
+        v-if="store.get('settings.enable_statistics')"
+        :open="statisticsOpen"
+        :events="this.events"
+        :start_date="this.start_date"
+        :end_date="this.end_date"
+    />
 
-  <!-- START | Calendar view -->
-  <!--
-    The 'mousedown' event is a problem. If you click on member selector or statistics, while one or the other is open
-    it will just close whichever is open.
-  -->
-  <vue-cal
-      ref="calendar"
-      :click-to-navigate="false"
-      :disable-views="['years', 'year', 'month', 'day']"
-      :drag-to-create-threshold="20"
-      :editable-events="{ drag: true, resize: true, create: true }"
-      :events="events"
-      :hide-view-selector="true"
-      :hide-weekends="!store.get('settings.show_weekend')"
-      :on-event-click="onTaskSingleClick"
-      :on-event-create="onTaskCreate"
-      :on-event-dblclick="onTaskDoubleClick"
-      :snap-to-time="15"
-      :time-cell-height="90"
-      :time-from="dayStart"
-      :time-to="dayEnd"
-      :watch-real-time="true"
-      active-view="week"
-      today-button
-      @ready="handleDateChange"
-      @view-change="handleDateChange"
-      @event-drop="updateTimeTrackingEntry"
-      @event-duration-change="updateTimeTrackingEntry"
-      @keydown.ctrl.delete.exact="deleteSelectedTask()"
-      @keydown.ctrl.v.exact="duplicateSelectedTask()"
-      @keydown.ctrl.d.exact="duplicateSelectedTask()"
-      @keydown.ctrl.x.exact="refreshBackgroundImage()"
-  >
-    <template v-slot:title="{ title }">
-      <div class="flex items-center space-x-4">
-        <span aria-label="false" type="false">
-          {{ title }}
-          <template v-if="events.length > 0">
-            <clock-icon class="w-3 ml-3 -mt-0.5 inline-block"/>
-            <span class="italic text-xs">{{ totalHoursOnDate(events) }}</span>
-
-          </template>
-        </span>
-
-        <!-- START | Extra controls -->
-        <div
-            class="flex space-x-1 text-gray-600"
-            style="-webkit-app-region: no-drag"
-        >
-          <router-link :to="{ name: 'settings' }" class="hover:text-gray-800" replace>
-            <cog-icon class="w-5"/>
-          </router-link>
-
-          <button
-              v-if="store.get('settings.admin_features_enabled')"
-              class="hover:text-gray-800"
-              @click="memberSelectorOpen = !memberSelectorOpen; statisticsOpen = false"
-          >
-            <users-icon class="w-5"/>
-          </button>
-
-          <button
-              v-if="store.get('settings.enable_statistics')"
-              class="hover:text-gray-800"
-              @click="memberSelectorOpen = false; statisticsOpen = !statisticsOpen"
-          >
-            <chart-pie-icon class="w-5"/>
-          </button>
-        </div>
-        <!-- End | Extra controls -->
-      </div>
-    </template>
-
-    <!-- START | Custom Day heading -->
-    <template v-slot:weekday-heading="{ heading, view }">
-      <div class="flex flex-col justify-center sm:flex-row">
-
-        <div>
-          <span class="full">{{ heading.label }}</span>
-          <span class="small">{{ heading.date.toLocaleDateString('en-US', {weekday: 'short'}) }}</span>
-          <span class="xsmall">{{ heading.label[0] }}</span>
-          <span>&nbsp;{{ heading.date.toLocaleDateString('en-US', {day: 'numeric'}) }}</span>
-        </div>
-
-        <div
-            v-if="hasTimeTrackedOn(heading.date, view.events)"
-            class="inline-flex items-center ml-2 text-xs text-gray-600 space-x-[2px]"
-        >
-          <clock-icon class="w-3 -mt-0.5"/>
-          <span class="italic">{{ totalHoursOnDate(view.events, heading.date) }}</span>
-        </div>
-
-      </div>
-    </template>
-    <!-- END | Custom Day heading -->
-
-    <!-- START | Custom Event template -->
-    <template v-slot:event="{ event }">
-      <div class="vuecal__event-title">
-        <span v-text="event.title"/>
-
-        <!-- START | Task context popover -->
-        <n-popover :delay="500" :duration="60" trigger="hover" width="260">
-
-          <template #trigger>
-            <div class="vuecal__event-task-info-popover absolute top-0 right-0 py-0.5 px-1 cursor-pointer flex">
-              <information-circle-icon class="w-5 transition-all hover:scale-125"/>
-
-              <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700  hover:scale-125"
-                      @click="shell.openExternal(event.taskUrl)">
-                <img alt="Open task in ClickUp" class="mt-1 w-6" src="@/assets/images/white-rounded-logo.svg">
-              </button>
-            </div>
-          </template>
-
-          <template #header>
-            <div class="flex justify-between">
-              <span class="font-semibold text-gray-700" v-text="event.title"></span>
-              <n-popconfirm
-                  v-if="selectedTask.deletable"
-                  :negative-text="null"
-                  :show-icon="false"
-                  positive-text="delete"
-                  @positive-click="deleteSelectedTask"
-              >
-                <template #trigger>
-                  <n-button circle secondary type="error">
-                    <n-icon name="delete-tracking-entry" size="18">
-                      <trash-icon/>
-                    </n-icon>
-                  </n-button>
-                </template>
-
-                Confirm deletion of time entry for
-                <div class="font-bold">{{ event.title }}</div>
-              </n-popconfirm>
-            </div>
-          </template>
-
-          <span class="whitespace-pre-wrap" v-text="event.description"></span>
-
-          <hr class="my-2 -mx-3.5"/>
-
-          <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700"
-                  @click="shell.openExternal(event.taskUrl)">
-            <img alt="Open task in ClickUp" class="mt-1 w-7" src="@/assets/images/white-rounded-logo.svg">
-            <span>Open in ClickUp</span>
-          </button>
-
-          <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700"
-                  @click="onTaskDoubleClick(event)">
-            <pencil-icon class="w-4 mx-1.5"/>
-            <span>Open details</span>
-          </button>
-        </n-popover>
-        <!-- END | Task context popover -->
-      </div>
-
-      <!-- START | Time from/to -->
-      <div class="vuecal__event-time">
-        {{ event.start.formatTime('HH:mm') }}
-        <span class="mx-1">-</span>
-        {{ event.end.formatTime('HH:mm') }}
-      </div>
-      <!-- END | Time from/to -->
-    </template>
-    <!-- END | Custom Event template -->
-
-  </vue-cal>
-  <!-- END | Calendar view -->
-
-  <!-- START | Task creation modal -->
-  <n-modal
-      v-model:show="showTaskCreationModal"
-      :mask-closable="false"
-      @keydown.esc="cancelTaskCreation"
-  >
-    <n-card
-        :bordered="false"
-        aria-modal="true"
-        class="max-w-xl"
-        role="dialog"
-        size="huge"
+    <!-- START | Calendar view -->
+    <!--
+      The 'mousedown' event is a problem. If you click on member selector or statistics, while one or the other is open
+      it will just close whichever is open.
+    -->
+    <vue-cal
+        ref="calendar"
+        class="bg-gray-50 text-gray-900 dark:bg-gray-800 dark:text-gray-300"
+        :click-to-navigate="false"
+        :disable-views="['years', 'year', 'month', 'day']"
+        :drag-to-create-threshold="20"
+        :editable-events="{ drag: true, resize: true, create: true }"
+        :events="events"
+        :hide-view-selector="true"
+        :hide-weekends="!store.get('settings.show_weekend')"
+        :on-event-click="onTaskSingleClick"
+        :on-event-create="onTaskCreate"
+        :on-event-dblclick="onTaskDoubleClick"
+        :snap-to-time="15"
+        :time-cell-height="90"
+        :time-from="dayStart"
+        :time-to="dayEnd"
+        :watch-real-time="true"
+        active-view="week"
+        today-button
+        @ready="handleDateChange"
+        @view-change="handleDateChange"
+        @event-drop="updateTimeTrackingEntry"
+        @event-duration-change="updateTimeTrackingEntry"
+        @keydown.ctrl.delete.exact="deleteSelectedTask()"
+        @keydown.ctrl.v.exact="duplicateSelectedTask()"
+        @keydown.ctrl.d.exact="duplicateSelectedTask()"
+        @keydown.ctrl.x.exact="refreshBackgroundImage()"
     >
+      <template v-slot:title="{ title }">
+        <div class="flex items-center space-x-4">
+          <span aria-label="false" type="false">
+            {{ title }}
+            <template v-if="events.length > 0">
+              <clock-icon class="w-3 ml-3 -mt-0.5 inline-block dark:text-gray-400"/>
+              <span class="italic text-xs dark:text-gray-400">{{ totalHoursOnDate(events) }}</span>
+            </template>
+          </span>
 
-      <TaskCreatorForm
-          :end="selectedTask.end"
-          :start="selectedTask.start"
-          @close="cancelTaskCreation"
-          @create="pushTimeTrackingEntry"
-      />
-
-    </n-card>
-  </n-modal>
-  <!-- END | Task creation modal -->
-
-  <!-- START | Task detail modal -->
-  <n-modal v-model:show="showTaskDetailsModal">
-    <n-card
-        :bordered="false"
-        aria-modal="true"
-        class="max-w-xl"
-        role="dialog"
-        size="huge"
-        :title="selectedTask.title"
-    >
-      <template #header>
-        <span class="flex items-center space-x-3">
-          <n-popconfirm
-              v-if="selectedTask.deletable"
-              :negative-text="null"
-              :show-icon="false"
-              positive-text="delete"
-              @positive-click="deleteSelectedTask"
+          <!-- START | Extra controls -->
+          <div
+              class="flex space-x-1 text-gray-600 dark:text-gray-400"
+              style="-webkit-app-region: no-drag"
           >
+            <router-link
+                :to="{ name: 'settings' }"
+                class="hover:text-gray-800 dark:hover:text-gray-200"
+                replace
+            >
+              <cog-icon class="w-5"/>
+            </router-link>
+
+            <button
+                v-if="store.get('settings.admin_features_enabled')"
+                class="hover:text-gray-800 dark:hover:text-gray-200"
+                @click="memberSelectorOpen = !memberSelectorOpen; statisticsOpen = false"
+            >
+              <users-icon class="w-5"/>
+            </button>
+
+            <button
+                v-if="store.get('settings.enable_statistics')"
+                class="hover:text-gray-800 dark:hover:text-gray-200"
+                @click="memberSelectorOpen = false; statisticsOpen = !statisticsOpen"
+            >
+              <chart-pie-icon class="w-5"/>
+            </button>
+          </div>
+          <!-- End | Extra controls -->
+        </div>
+      </template>
+
+      <!-- START | Custom Day heading -->
+      <template v-slot:weekday-heading="{ heading, view }">
+        <div class="flex flex-col justify-center sm:flex-row">
+          <div>
+            <span class="full">{{ heading.label }}</span>
+            <span class="small">{{ heading.date.toLocaleDateString('en-US', {weekday: 'short'}) }}</span>
+            <span class="xsmall">{{ heading.label[0] }}</span>
+            <span>&nbsp;{{ heading.date.toLocaleDateString('en-US', {day: 'numeric'}) }}</span>
+          </div>
+
+          <div
+              v-if="hasTimeTrackedOn(heading.date, view.events)"
+              class="inline-flex items-center ml-2 text-xs text-gray-600 space-x-[2px] dark:text-gray-400"
+          >
+            <clock-icon class="w-3 -mt-0.5"/>
+            <span class="italic">{{ totalHoursOnDate(view.events, heading.date) }}</span>
+          </div>
+        </div>
+      </template>
+      <!-- END | Custom Day heading -->
+
+      <!-- START | Custom Event template -->
+      <template v-slot:event="{ event }">
+        <div class="vuecal__event-title">
+          <span v-text="event.title" class="dark:text-gray-100"/>
+
+          <!-- START | Task context popover -->
+          <n-popover :delay="500" :duration="60" trigger="hover" width="260">
             <template #trigger>
-              <n-button circle secondary type="error">
-                <n-icon name="delete-tracking-entry" size="18">
-                  <trash-icon/>
-                </n-icon>
-              </n-button>
+              <div class="vuecal__event-task-info-popover absolute top-0 right-0 py-0.5 px-1 cursor-pointer flex">
+                <information-circle-icon class="w-5 transition-all hover:scale-125 dark:text-gray-400"/>
+
+                <button
+                    class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:scale-125"
+                    @click="shell.openExternal(event.taskUrl)"
+                >
+                  <img
+                      alt="Open task in ClickUp"
+                      class="mt-1 w-6"
+                      src="@/assets/images/white-rounded-logo.svg"
+                  >
+                </button>
+              </div>
             </template>
 
-            You sure bout that?
-          </n-popconfirm>
+            <template #header>
+              <div class="flex justify-between">
+                <span class="font-semibold text-gray-700" v-text="event.title"></span>
+                <n-popconfirm
+                    v-if="selectedTask.deletable"
+                    :negative-text="null"
+                    :show-icon="false"
+                    positive-text="delete"
+                    @positive-click="deleteSelectedTask"
+                >
+                  <template #trigger>
+                    <n-button circle secondary type="error">
+                      <n-icon name="delete-tracking-entry" size="18">
+                        <trash-icon/>
+                      </n-icon>
+                    </n-button>
+                  </template>
 
-          <span>{{ selectedTask.title }}</span>
-        </span>
+                  Confirm deletion of time entry for
+                  <div class="font-bold">{{ event.title }}</div>
+                </n-popconfirm>
+              </div>
+            </template>
+
+            <span class="whitespace-pre-wrap" v-text="event.description"></span>
+
+            <hr class="my-2 -mx-3.5"/>
+
+            <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700"
+                    @click="shell.openExternal(event.taskUrl)">
+              <img alt="Open task in ClickUp" class="mt-1 w-7" src="@/assets/images/white-rounded-logo.svg">
+              <span>Open in ClickUp</span>
+            </button>
+
+            <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700"
+                    @click="onTaskDoubleClick(event)">
+              <pencil-icon class="w-4 mx-1.5"/>
+              <span>Open details</span>
+            </button>
+          </n-popover>
+          <!-- END | Task context popover -->
+        </div>
+
+        <!-- START | Time from/to -->
+        <div class="vuecal__event-time dark:text-gray-400">
+          {{ event.start.formatTime('HH:mm') }}
+          <span class="mx-1">-</span>
+          {{ event.end.formatTime('HH:mm') }}
+        </div>
+        <!-- END | Time from/to -->
       </template>
+      <!-- END | Custom Event template -->
+    </vue-cal>
+    <!-- END | Calendar view -->
 
-      <n-space vertical>
-        <!-- TODO: Show some task labels -->
-        <!-- TODO: Show current task column -->
+    <!-- START | Task creation modal -->
+    <n-modal
+        v-model:show="showTaskCreationModal"
+        :mask-closable="false"
+        @keydown.esc="cancelTaskCreation"
+        class="dark:bg-gray-800 dark:text-gray-200"
+    >
+      <n-card
+          :bordered="false"
+          aria-modal="true"
+          class="max-w-xl bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+          role="dialog"
+          size="huge"
+      >
+        <TaskCreatorForm
+            :end="selectedTask.end"
+            :start="selectedTask.start"
+            @close="cancelTaskCreation"
+            @create="pushTimeTrackingEntry"
+        />
+      </n-card>
+    </n-modal>
+    <!-- END | Task creation modal -->
 
-        <!-- show time values -->
-        <n-space>
-          <n-icon name="clock" size="20">
-            <clock-icon/>
-          </n-icon>
-          <span>{{ selectedTask.start.formatTime('HH:mm') }} - {{ selectedTask.end.formatTime('HH:mm') }}</span>
+    <!-- START | Task detail modal -->
+    <n-modal v-model:show="showTaskDetailsModal" class="dark:bg-gray-800 dark:text-gray-200">
+      <n-card
+          :bordered="false"
+          aria-modal="true"
+          class="max-w-xl bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+          role="dialog"
+          size="huge"
+          :title="selectedTask.title"
+      >
+        <template #header>
+      <span class="flex items-center space-x-3 dark:text-gray-200">
+        <n-popconfirm
+            v-if="selectedTask.deletable"
+            :negative-text="null"
+            :show-icon="false"
+            positive-text="delete"
+            @positive-click="deleteSelectedTask"
+        >
+          <template #trigger>
+            <n-button
+                circle
+                secondary
+                type="error"
+                class="bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
+            >
+              <n-icon name="delete-tracking-entry" size="18">
+                <trash-icon/>
+              </n-icon>
+            </n-button>
+          </template>
+          You sure bout that?
+        </n-popconfirm>
+        <span>{{ selectedTask.title }}</span>
+      </span>
+        </template>
+
+        <n-space vertical class="dark:text-gray-200">
+          <n-space>
+            <n-icon name="clock" size="20" class="dark:text-gray-400">
+              <clock-icon/>
+            </n-icon>
+            <span>{{ selectedTask.start.formatTime('HH:mm') }} - {{ selectedTask.end.formatTime('HH:mm') }}</span>
+          </n-space>
+
+          <n-form ref="editForm" :model="selectedTask" :rules="rules.task" size="large">
+            <n-form-item :show-label="false" path="description">
+              <n-mention
+                  v-model:value="selectedTask.description"
+                  :options="mentionable"
+                  :render-label="renderMentionLabel"
+                  placeholder="Describe what you worked on"
+                  type="textarea"
+                  class="dark:bg-gray-800 dark:text-gray-200"
+              />
+            </n-form-item>
+          </n-form>
         </n-space>
 
-        <n-form ref="editForm" :model="selectedTask" :rules="rules.task" size="large">
-          <n-form-item :show-label="false" path="description">
-            <n-mention
-                v-model:value="selectedTask.description"
-                :options="mentionable"
-                :render-label="renderMentionLabel"
-                placeholder="Describe what you worked on"
-                type="textarea"
-            />
-          </n-form-item>
-        </n-form>
-
-      </n-space>
-
-      <template #footer>
-        <div class="flex justify-end space-x-2">
-          <n-button round @click="closeDetailModal()">Cancel</n-button>
-          <n-button round type="primary" @click="updateTimeTrackingEntry({ event: selectedTask })">Update</n-button>
-        </div>
-      </template>
-
-    </n-card>
-  </n-modal>
-  <!-- END | Task detail modal -->
+        <template #footer>
+          <div class="flex justify-end space-x-2">
+            <n-button
+                round
+                @click="closeDetailModal()"
+                class="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+            >
+              Cancel
+            </n-button>
+            <n-button
+                round
+                type="primary"
+                @click="updateTimeTrackingEntry({ event: selectedTask })"
+                class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
+            >
+              Update
+            </n-button>
+          </div>
+        </template>
+      </n-card>
+    </n-modal>
+    <!-- END | Task detail modal -->
+  </div>
 </template>
 
 

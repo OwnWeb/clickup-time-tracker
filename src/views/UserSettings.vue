@@ -1,25 +1,26 @@
 <template>
   <!-- START | Drag handle -->
-  <div class="h-6" style="-webkit-app-region: drag"></div>
+  <div class="h-6 bg-gray-200 dark:bg-gray-700" style="-webkit-app-region: drag"></div>
   <!-- END | Drag handle -->
 
-  <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+  <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200">
     <n-form ref="form" :model="model" :rules="rules" size="large">
       <n-form-item label="ClickUp Access token" path="clickup_access_token" placeholder="pk_">
-        <n-input v-model:value="model.clickup_access_token" clearable/>
+        <n-input v-model:value="model.clickup_access_token" clearable class="dark:bg-gray-800 dark:text-gray-200" />
       </n-form-item>
 
       <n-form-item label="ClickUp Team ID" path="clickup_team_id">
-        <n-input v-model:value="model.clickup_team_id" clearable/>
+        <n-input v-model:value="model.clickup_team_id" clearable class="dark:bg-gray-800 dark:text-gray-200" />
       </n-form-item>
       <div class="flex space-x-4">
         <n-form-item label="Day starts at" path="day_start" class="flex-grow">
           <n-select
               v-model:value="model.day_start"
               :options="hours"
+              class="dark:bg-gray-800 dark:text-gray-200"
           >
             <template #arrow>
-              <ClockIcon class="w-4"/>
+              <ClockIcon class="w-4 dark:text-gray-300" />
             </template>
           </n-select>
         </n-form-item>
@@ -28,65 +29,61 @@
           <n-select
               v-model:value="model.day_end"
               :options="hours"
+              class="dark:bg-gray-800 dark:text-gray-200"
           >
             <template #arrow>
-              <ClockIcon class="w-4"/>
+              <ClockIcon class="w-4 dark:text-gray-300" />
             </template>
           </n-select>
         </n-form-item>
       </div>
 
       <!-- START | Feature toggles -->
-      <div class="relative p-4 bg-white border rounded-lg shadow-sm">
-
-        <label class="absolute px-1.5 bg-white -left-0.5 -top-3">Optional features</label>
+      <div class="relative p-4 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-sm">
+        <label class="absolute px-1.5 bg-white dark:bg-gray-800 -left-0.5 -top-3">Optional features</label>
 
         <n-form-item :show-feedback="false" :show-label="false" path="show_weekend">
-          <n-switch v-model:value="model.show_weekend" :default-value="true"/>
-          <label class="ml-3 text-gray-800">Show weekends</label>
+          <n-switch v-model:value="model.show_weekend" :default-value="true" />
+          <label class="ml-3 text-gray-800 dark:text-gray-200">Show weekends</label>
         </n-form-item>
 
         <n-form-item :show-feedback="false" :show-label="false" path="require_description">
-          <n-switch v-model:value="model.require_description" :default-value="false"/>
-          <label class="ml-3 text-gray-800">Require descriptions</label>
+          <n-switch v-model:value="model.require_description" :default-value="false" />
+          <label class="ml-3 text-gray-800 dark:text-gray-200">Require descriptions</label>
         </n-form-item>
 
         <n-form-item :show-feedback="false" :show-label="false" path="admin_features_enabled">
-          <n-switch v-model:value="model.admin_features_enabled" :default-value="false"/>
-          <label class="ml-3 text-gray-800">
+          <n-switch v-model:value="model.admin_features_enabled" :default-value="false" />
+          <label class="ml-3 text-gray-800 dark:text-gray-200">
             Enable admin features
-            <div class="text-sm text-gray-500">You must be a CU admin to use this</div>
+            <div class="text-sm text-gray-500 dark:text-gray-400">You must be a CU admin to use this</div>
           </label>
         </n-form-item>
 
         <n-form-item :show-feedback="false" :show-label="false" path="enable_statistics">
-          <n-switch v-model:value="model.enable_statistics" :default-value="false"/>
-          <label class="ml-3 text-gray-800">Enable statistics</label>
+          <n-switch v-model:value="model.enable_statistics" :default-value="false" />
+          <label class="ml-3 text-gray-800 dark:text-gray-200">Enable statistics</label>
         </n-form-item>
-        <hr class="my-6"/>
+        <hr class="my-6 dark:border-gray-700" />
         <!-- END | Feature toggles -->
 
         <!-- START | Styling -->
-        <label class="absolute px-1.5 bg-white -ml-4 -mt-9">Style</label>
+        <label class="absolute px-1.5 bg-white dark:bg-gray-800 -ml-4 -mt-9">Style</label>
 
         <n-form-item label="Background image url (optional)" path="background_image_url">
-          <n-input v-model:value="model.background_image_url" clearable/>
+          <n-input v-model:value="model.background_image_url" clearable class="dark:bg-gray-800 dark:text-gray-200" />
         </n-form-item>
 
-        <label class="text-gray-800">Color of tracking entries</label>
+        <label class="text-gray-800 dark:text-gray-200">Color of tracking entries</label>
         <div class="grid grid-cols-2 gap-4 w-full">
           <n-form-item :show-feedback="false" :show-label="false" path="custom_color_enabled">
-            <n-switch
-                v-model:value="model.custom_color_enabled"
-                @update:value="setDefaultColor"
-            />
-            <label class="ml-3 text-gray-800">Enable custom color</label>
+            <n-switch v-model:value="model.custom_color_enabled" @update:value="setDefaultColor" />
+            <label class="ml-3 text-gray-800 dark:text-gray-200">Enable custom color</label>
           </n-form-item>
 
           <n-form-item :show-label="false" :show-feedback="false" class="w-full" path="color">
             <n-color-picker
                 v-model:value="model.color"
-
                 :disabled="!(model.custom_color_enabled)"
                 :modes="['hex']"
                 class="w-full"
@@ -94,12 +91,11 @@
           </n-form-item>
         </div>
 
-
-        <hr class="my-6"/>
+        <hr class="my-6 dark:border-gray-700" />
         <!-- END | Styling -->
 
         <!-- START | Goals -->
-        <label class="absolute px-1.5 bg-white -ml-4 -mt-9">Goals</label>
+        <label class="absolute px-1.5 bg-white dark:bg-gray-800 -ml-4 -mt-9">Goals</label>
         <n-form-item :show-label="false" :show-feedback="false" path="goals">
           <n-dynamic-input
               v-model:value="model.goals"
@@ -117,7 +113,7 @@
                     v-model:value="value.type"
                     :options="clickUpTypeOptions"
                     :render-label="renderDropDownIcon"
-                    class="mr-2.5"
+                    class="mr-2.5 dark:bg-gray-800 dark:text-gray-200"
                     style="width: 200px"
                     placeholder="Type"
                 />
@@ -125,7 +121,7 @@
                     v-model:value="value.clickUpId"
                     placeholder="ClickUp Id"
                     type="text"
-                    class="mr-2.5"
+                    class="mr-2.5 dark:bg-gray-800 dark:text-gray-200"
                 />
                 <n-input-number
                     v-model:value="value.goal"
@@ -137,94 +133,87 @@
             </template>
           </n-dynamic-input>
         </n-form-item>
-        <hr class="my-6"/>
+        <hr class="my-6 dark:border-gray-700" />
         <!-- END | Goals -->
 
         <!-- START | Danger zone -->
-        <label class="absolute px-1.5 bg-white -ml-4 -mt-9">Danger zone</label>
+        <label class="absolute px-1.5 bg-white dark:bg-gray-800 -ml-4 -mt-9">Danger zone</label>
         <n-popconfirm :show-icon="false" @positive-click="flushCaches">
           <template #activator>
-            <n-button secondary size="small" type="warning">
+            <n-button secondary size="small" type="warning" class="bg-yellow-500 dark:bg-yellow-700">
               Flush caches
             </n-button>
           </template>
-
-          This will clear all locally cached<br/>
+          This will clear all locally cached<br />
           ClickUp tasks & team members
-
         </n-popconfirm>
         <!-- END | Danger zone -->
-
       </div>
 
       <div class="flex justify-end mt-4 space-x-2">
-        <n-button round @click="cancel">Cancel</n-button>
-        <n-button round type="primary" @click="persist">Save</n-button>
+        <n-button round @click="cancel" class="bg-gray-200 dark:bg-gray-700 dark:text-gray-200">
+          Cancel
+        </n-button>
+        <n-button round type="primary" @click="persist" class="bg-blue-600 dark:bg-blue-800">
+          Save
+        </n-button>
       </div>
-
     </n-form>
 
-    <div class="flex flex-col p-3 space-y-4 shadow-inner bg-gray-50">
-      <h2 class="text-xl font-bold text-gray-700">Instructions</h2>
+    <div class="flex flex-col p-3 space-y-4 shadow-inner bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+      <h2 class="text-xl font-bold text-gray-700 dark:text-gray-200">Instructions</h2>
       <p>Click & drag in order to create a new tracking entry</p>
 
-      <h3 class="text-lg font-bold text-gray-700">Styling</h3>
-      <p>It is possible to give all tracking entries the same color, this is done by turning on the option, and
-        selecting the preferred color. When the option is turned off the color of the entry is based on color given, in
-        ClickUp, to the Space that the tracked task belongs too.</p>
+      <h3 class="text-lg font-bold text-gray-700 dark:text-gray-200">Styling</h3>
+      <p>It is possible to give all tracking entries the same color...</p>
 
-      <h3 class="text-lg font-bold text-gray-700">Goals</h3>
-      <p>When statistics are enabled, you can add up to 4 weekly goals. Fill in the ID of either a ClickUp Space,
-        Folder, List, or Task, with a weekly working quota. And bar chart will be added to the statistics panel to track
-        your progress.</p>
+      <h3 class="text-lg font-bold text-gray-700 dark:text-gray-200">Goals</h3>
+      <p>When statistics are enabled...</p>
 
-      <h2 class="text-lg font-bold text-gray-700">Keybindings</h2>
+      <h2 class="text-lg font-bold text-gray-700 dark:text-gray-200">Keybindings</h2>
 
       <div class="flex">
-        <kbd
-            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded ">
+        <kbd class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded">
           ⌘ + D
         </kbd>
         Duplicate the selected entry
       </div>
-
       <div class="flex">
         <kbd
-            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded ">
+            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded dark:text-gray-300 dark:border-gray-600">
           ⌘ +
-          <backspace-icon class="w-4 ml-1"/>
+          <backspace-icon class="w-4 ml-1 dark:text-gray-300"/>
         </kbd>
-        Delete the selected entry
+        <span class="text-gray-800 dark:text-gray-200">Delete the selected entry</span>
       </div>
 
       <div class="flex">
         <kbd
-            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded ">
+            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded dark:text-gray-300 dark:border-gray-600">
           ⌘ + X
         </kbd>
-        Refresh background image cache
+        <span class="text-gray-800 dark:text-gray-200">Refresh background image cache</span>
       </div>
 
       <div class="flex">
         <kbd
-            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded ">
+            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded dark:text-gray-300 dark:border-gray-600">
           ⌘ + R
         </kbd>
-        Refresh the current screen (for troubleshooting)
+        <span class="text-gray-800 dark:text-gray-200">Refresh the current screen (for troubleshooting)</span>
       </div>
 
       <div class="flex">
         <kbd
-            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded ">
+            class="inline-flex items-center px-2 mr-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded dark:text-gray-300 dark:border-gray-600">
           ⌘ + V
         </kbd>
-        alias for
+        <span class="text-gray-800 dark:text-gray-200">alias for</span>
         <kbd
-            class="inline-flex items-center px-2 ml-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded ">
+            class="inline-flex items-center px-2 ml-2 font-sans text-sm font-medium text-gray-400 border border-gray-300 rounded dark:text-gray-300 dark:border-gray-600">
           ⌘ + D
         </kbd>
       </div>
-
     </div>
   </div>
 </template>
