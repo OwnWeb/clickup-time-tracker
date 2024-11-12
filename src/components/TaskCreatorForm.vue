@@ -355,7 +355,7 @@ onMounted(async () => {
           >
             <template #header>
               <div class="flex space-x-2">
-                Filters &nbsp;
+                Include &nbsp;
                 <div class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex color-gray-600 hover:bg-gray-200 cursor-pointer p-1 text-xs flex justify-center border  rounded-r-2xl px-2"
                      @click="withClosed = !withClosed"
                      :class="withClosed ? 'bg-green-200 accent-green-600 border-green-600 hover:bg-green-300' : 'transparent border-transparent'"
