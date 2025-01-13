@@ -161,7 +161,7 @@
             </template>
 
             <span class="whitespace-pre-wrap" v-text="event.description"></span>
-            
+
             <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                     @click="shell.openExternal(event.taskUrl)">
               <img alt="Open task in ClickUp" class="mt-1 w-7" src="@/assets/images/white-rounded-logo.svg">
