@@ -137,7 +137,8 @@
 
             <template #header>
               <div class="flex justify-between">
-                <span class="font-semibold text-gray-700" v-text="event.title"></span>
+                <span class="font-semibold text-gray-700 dark:text-gray-200"
+                      v-text="event.title"></span>
                 <n-popconfirm
                     v-if="selectedTask.deletable"
                     :negative-text="null"
@@ -160,16 +161,14 @@
             </template>
 
             <span class="whitespace-pre-wrap" v-text="event.description"></span>
-
-            <hr class="my-2 -mx-3.5"/>
-
-            <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700"
+            
+            <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                     @click="shell.openExternal(event.taskUrl)">
               <img alt="Open task in ClickUp" class="mt-1 w-7" src="@/assets/images/white-rounded-logo.svg">
               <span>Open in ClickUp</span>
             </button>
 
-            <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700"
+            <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                     @click="onTaskDoubleClick(event)">
               <pencil-icon class="w-4 mx-1.5"/>
               <span>Open details</span>
