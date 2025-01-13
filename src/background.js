@@ -34,7 +34,7 @@ ipcMain.on('get-clickup-hierarchy', (event) => {
 // Clear ClickUp hierarchy cache & fetch fresh hierarchy
 ipcMain.on('refresh-clickup-hierarchy', (event) => {
     clickupService.clearCachedHierarchy()
-    clickupService.getHierarchy()
+    clickupService.getCachedHierarchy()
         .then(hierarchy => event.reply('set-clickup-hierarchy', hierarchy))
         .catch(err => event.reply('fetch-clickup-hierarchy-error', err))
 })
