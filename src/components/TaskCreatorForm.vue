@@ -298,12 +298,25 @@ function renderSwitcherIcon(option) {
   return h(NIcon, {size: '15px', id: 'cascader-icon', color: color}, {default: () => h(icon)})
 }
 
-function filter(string, option) {
-  return normalize(option.label).includes(normalize(string));
+function filter(query, option) {
+  const q = normalize(query);
+  const fields = [];
+  // Primary label/name
+  if (option && option.label) fields.push(option.label);
+  if (option && option.name) fields.push(option.name);
+  // ClickUp custom task ID like QM-793
+  if (option && option.custom_id) fields.push(String(option.custom_id));
+  // Numeric/internal id
+  if (option && option.id) fields.push(String(option.id));
+  if (option && option.value) fields.push(String(option.value));
+
+  return fields.some(v => normalize(v).includes(q));
 }
 
-function normalize(string) {
-  return removeAccents(string.toLowerCase()).trim()
+function normalize(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return removeAccents(s.toLowerCase()).trim();
 }
 
 /*

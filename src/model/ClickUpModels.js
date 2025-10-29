@@ -63,6 +63,9 @@ export class ClickUpItem{
         this.name = item.name;
         this.label = item.name;
 
+        // Preserve ClickUp custom task ID (e.g., QM-793) when available so we can search by it
+        this.custom_id = item.custom_id || null;
+
         this.type = type;
 
         switch (this.type){
