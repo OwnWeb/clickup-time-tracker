@@ -19,23 +19,29 @@
     @keydown.meta.x.exact="refreshBackgroundImage()"
     active-view="week"
     today-button
-    class="mt-[80px]"
+    class="mt-[80px] bg-gray-50 text-gray-900 dark:bg-gray-800 dark:text-gray-300"
     ref="calendar"
   >
     <template v-slot:title="{ title }">
       <div class="flex items-center space-x-4">
-        <span type="false" aria-label="false">{{ title }}</span>
+        <span aria-label="false" type="false">
+          {{ title }}
+          <template v-if="events.length > 0">
+            <clock-icon class="w-3 ml-3 -mt-0.5 inline-block dark:text-gray-400"/>
+            <span class="italic text-xs dark:text-gray-400">{{ totalHoursOnDate(events) }}</span>
+          </template>
+        </span>
 
         <!-- START | Extra controls -->
         <div
-          class="flex space-x-1 text-gray-600"
+          class="flex space-x-1 text-gray-600 dark:text-gray-400"
           style="-webkit-app-region: no-drag"
         >
-          <router-link :to="{ name: 'settings' }" replace class="hover:text-gray-800">
+          <router-link :to="{ name: 'settings' }" replace class="hover:text-gray-800 dark:hover:text-gray-100">
             <cog-icon class="w-5" />
           </router-link>
 
-          <router-link :to="{ name: 'time-tracker' }" replace class="hover:text-gray-800">
+          <router-link :to="{ name: 'time-tracker' }" replace class="hover:text-gray-800 dark:hover:text-gray-100">
             <user-icon class="w-5" />
           </router-link>
         </div>
@@ -56,10 +62,10 @@
 
             <div
                 v-if="hasTimeTrackedOn(heading.date, view.events)"
-                class="inline-flex items-center ml-2 text-xs text-gray-600 space-x-[2px]"
+                class="inline-flex items-center ml-2 text-xs text-gray-600 space-x-[2px] dark:text-gray-400"
             >
                 <clock-icon class="w-3 -mt-0.5" />
-                <span class="italic">{{ totalHoursOnDate(heading.date, view.events) }}</span>
+                <span class="italic">{{ totalHoursOnDate(view.events, heading.date) }}</span>
             </div>
 
         </div>
@@ -69,31 +75,31 @@
     <template v-slot:event="{ event }" >
 
         <div class="vuecal__event-title">
-            <span v-text="event.title" />
+            <span v-text="event.title" class="dark:text-gray-100" />
 
             <!-- START | Task context popover -->
             <n-popover trigger="hover" :delay="500" :duration="60" width="260">
 
                 <template #trigger>
                     <span class="vuecal__event-task-info-popover absolute top-0 right-0 py-0.5 px-1 cursor-pointer">
-                        <information-circle-icon class="w-4 text-blue-300 transition-all hover:scale-125"/>
+                        <information-circle-icon class="w-5 transition-all hover:scale-125 dark:text-gray-400"/>
                     </span>
                 </template>
 
                 <template #header>
-                    <span class="font-semibold text-gray-700" v-text="event.title"></span>
+                    <span class="font-semibold text-gray-700 dark:text-gray-200" v-text="event.title"></span>
                 </template>
 
-                <span v-text="event.description" class="whitespace-pre-wrap"></span>
+                <span v-text="event.description" class="whitespace-pre-wrap text-gray-700 dark:text-gray-200"></span>
 
-                <hr class="my-2 -mx-3.5" />
+                <hr class="my-2 -mx-3.5 border-gray-200 dark:border-gray-700" />
 
-                <button v-if="event.taskUrl" @click="shell.openExternal(event.taskUrl)" class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700">
+                <button v-if="event.taskUrl" @click="shell.openExternal(event.taskUrl)" class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100">
                     <img class="mt-1 w-7" src="@/assets/images/white-rounded-logo.svg" alt="Open task in ClickUp">
                     <span>Open in ClickUp</span>
                 </button>
 
-                <button @click="onTaskDoubleClick(event)" class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700">
+                <button @click="onTaskDoubleClick(event)" class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100">
                     <pencil-icon class="w-4 mx-1.5" />
                     <span>Open details</span>
                 </button>
@@ -104,7 +110,7 @@
         </div>
 
         <!-- START | Time from/to -->
-        <div class="vuecal__event-time">
+        <div class="vuecal__event-time dark:text-gray-200">
             {{ event.start.formatTime('HH:mm') }}
             <span class="mx-1">-</span>
             {{ event.end.formatTime('HH:mm') }}
@@ -153,6 +159,7 @@ import { InformationCircleIcon, CogIcon, UserIcon } from "@heroicons/vue/20/soli
 import { ClockIcon, PencilIcon } from "@heroicons/vue/24/outline";
 import { NModal,  NCard,  NSpace, NPopover,  useNotification } from "naive-ui";
 import MemberSelector from '@/components/MemberSelector'
+import { totalHoursOnDate as totalHoursOnDateUtil, hasTimeTrackedOn as hasTimeTrackedOnUtil } from '@/utils/time-utils'
 
 export default {
   components: { MemberSelector, VueCal, RouterLink, NModal, NCard, NSpace, NPopover, CogIcon, UserIcon, ClockIcon, PencilIcon, InformationCircleIcon },
@@ -171,6 +178,8 @@ export default {
       loadingClickupCards: ref(false),
 
       showTaskDetailsModal: ref(false),
+      totalHoursOnDate: totalHoursOnDateUtil,
+      hasTimeTrackedOn: hasTimeTrackedOnUtil,
 
       error(options) {
         notification.error({ duration: 5000, ...options });
@@ -256,27 +265,6 @@ export default {
     | MISC & EASTER EGG LAND
     |--------------------------------------------------------------------------
     */
-    totalHoursOnDate(date, events) {
-        let totalMinutes = events
-            .filter(event => event.start.getDate() == date.getDate())
-            .reduce((carry, event) => carry + (event.endTimeMinutes - event.startTimeMinutes), 0)
-
-        let hours = Math.floor(totalMinutes / 60)
-        let minutes = totalMinutes % 60
-
-        if (totalMinutes === 0) {
-            return
-        }
-
-        return hours + ':' + String(minutes).padStart(2, '0')
-    },
-
-    hasTimeTrackedOn(date, events) {
-        return Boolean(
-            events.find(event => event.start.getDate() == date.getDate())
-        )
-    },
-
     refreshBackgroundImage: function() {
 
       const bg = document.getElementsByClassName('vuecal')[0];

@@ -308,6 +308,7 @@ import store from "@/store";
 import {isEmptyObject} from "@/helpers";
 import eventFactory from "@/events-factory";
 import clickupService from "@/clickup-service";
+import { totalHoursOnDate as totalHoursOnDateUtil, hasTimeTrackedOn as hasTimeTrackedOnUtil } from "@/utils/time-utils";
 
 import MemberSelector from '@/components/MemberSelector'
 import TimeTrackingStatistics from '@/components/TimeTrackingStatistics'
@@ -376,6 +377,8 @@ export default {
       memberSelectorOpen: ref(false),
       statisticsOpen: ref(false),
       selectedTask: ref({}),
+      totalHoursOnDate: totalHoursOnDateUtil,
+      hasTimeTrackedOn: hasTimeTrackedOnUtil,
 
       start_date: ref(new Date()),
       end_date: ref(new Date()),
@@ -654,33 +657,6 @@ export default {
     | MISC & EASTER EGG LAND
     |--------------------------------------------------------------------------
     */
-    totalHoursOnDate(events, date) {
-      let noDate = typeof date === 'undefined';
-      const filteredEvents = noDate ? events : events.filter(event => event.start.getDate() == date.getDate())
-
-      let totalMinutes = filteredEvents.reduce((carry, event) => {
-        const startTimestamp = new Date(event.start).getTime();
-        const endTimestamp = new Date(event.end).getTime();
-        const durationMinutes = (endTimestamp - startTimestamp) / 60000;
-        return carry + durationMinutes;
-      }, 0);
-
-
-      let hours = Math.floor(totalMinutes / 60)
-      let minutes = totalMinutes % 60
-
-      if (totalMinutes === 0) {
-        return
-      }
-
-      return hours + ':' + String(minutes).padStart(2, '0')
-    },
-
-    hasTimeTrackedOn(date, events) {
-      return Boolean(
-          events.find(event => event.start.getDate() == date.getDate())
-      )
-    },
 
     fetchMentionableUsers() {
       clickupService.getCachedUsers().then(users => {
