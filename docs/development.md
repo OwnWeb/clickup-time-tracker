@@ -6,6 +6,7 @@ npm install
 ``` bash
 npm run electron:serve
 ```
+
 ### Build for production
 ``` bash
 npm run build:osx
@@ -13,6 +14,17 @@ npm run build:win
 npm run build:linux
 npm run build:all
 ```
+
+### Node/OpenSSL error (error:0308010C) when bundling
+If you see an error like:
+
+```
+Error: error:0308010C:digital envelope routines::unsupported
+```
+
+This happens with Node.js >= 17 using OpenSSL 3 and webpack 4 (used by vue-cli-plugin-electron-builder).
+
+Switch to Node 16 LTS for development/builds (e.g., with nvm).
 
 ### Build & publish a new release
 ``` bash
