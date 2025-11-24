@@ -14,6 +14,8 @@ export default {
             title: entry.task.name,
             taskUrl: entry.task_url,
             spaceId: entry.task_location.space_id,
+            // Prefer name from API if provided (we pass include_location_names=true)
+            spaceName: entry.task_location && (entry.task_location.space_name || entry.task_location.space) || undefined,
             description: entry.description,
             start: new Date(Number(entry.start)),
             end: new Date(Number(entry.start) + Number(entry.duration)),
@@ -61,6 +63,7 @@ export default {
             taskId: remote.task.id,
             taskUrl: `https://app.clickup.com/t/${remote.task.id}`,
             title: remote.task.name,
+            spaceName: original.spaceName || (remote.task && remote.task.space && remote.task.space.name) || original.spaceName,
             description: remote.description,
             start: new Date(Number(remote.start)),
             end: new Date(Number(remote.start) + Number(remote.duration)),

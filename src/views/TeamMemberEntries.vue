@@ -75,7 +75,10 @@
     <template v-slot:event="{ event }" >
 
         <div class="vuecal__event-title">
-            <span v-text="event.title" class="dark:text-gray-100" />
+            <span class="dark:text-gray-100 align-baseline">
+                {{ event.title }}
+                <span v-if="event.spaceName" class="ml-1 text-xs text-gray-600 dark:text-gray-400 font-normal align-baseline">({{ event.spaceName }})</span>
+            </span>
 
             <!-- START | Task context popover -->
             <n-popover trigger="hover" :delay="500" :duration="60" width="260">
@@ -87,7 +90,10 @@
                 </template>
 
                 <template #header>
-                    <span class="font-semibold text-gray-700 dark:text-gray-200" v-text="event.title"></span>
+                    <span class="font-semibold text-gray-700 dark:text-gray-200 align-baseline">
+                        {{ event.title }}
+                        <span v-if="event.spaceName" class="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal align-baseline">({{ event.spaceName }})</span>
+                    </span>
                 </template>
 
                 <span v-text="event.description" class="whitespace-pre-wrap text-gray-700 dark:text-gray-200"></span>
@@ -127,11 +133,16 @@
     <n-card
       :bordered="false"
       class="max-w-xl"
-      :title="selectedTask.title"
       size="huge"
       role="dialog"
       aria-modal="true"
     >
+      <template #header>
+        <span class="font-semibold text-gray-700 dark:text-gray-200 align-baseline">
+          {{ selectedTask.title }}
+          <span v-if="selectedTask.spaceName" class="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal align-baseline">({{ selectedTask.spaceName }})</span>
+        </span>
+      </template>
       <n-space vertical>
 
         <p class="whitespace-pre-wrap">{{ selectedTask.description || "No description provided" }}</p>

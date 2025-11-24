@@ -114,7 +114,10 @@
       <!-- START | Custom Event template -->
       <template v-slot:event="{ event }">
         <div class="vuecal__event-title">
-          <span v-text="event.title" class="dark:text-gray-100"/>
+          <span class="dark:text-gray-100">
+            {{ event.title }}
+            <span v-if="event.spaceName" class="ml-1 text-xs text-gray-600 dark:text-gray-400 font-normal align-baseline">({{ event.spaceName }})</span>
+          </span>
 
           <!-- START | Task context popover -->
           <n-popover :delay="500" :duration="60" trigger="hover" width="260">
@@ -137,8 +140,10 @@
 
             <template #header>
               <div class="flex justify-between">
-                <span class="font-semibold text-gray-700 dark:text-gray-200"
-                      v-text="event.title"></span>
+                <span class="font-semibold text-gray-700 dark:text-gray-200">
+                  {{ event.title }}
+                  <span v-if="event.spaceName" class="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal align-baseline">({{ event.spaceName }})</span>
+                </span>
                 <n-popconfirm
                     v-if="selectedTask.deletable"
                     :negative-text="null"
@@ -155,7 +160,10 @@
                   </template>
 
                   Confirm deletion of time entry for
-                  <div class="font-bold">{{ event.title }}</div>
+                  <div class="font-bold">
+                    {{ event.title }}
+                    <span v-if="event.spaceName" class="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal align-baseline">({{ event.spaceName }})</span>
+                  </div>
                 </n-popconfirm>
               </div>
             </template>
