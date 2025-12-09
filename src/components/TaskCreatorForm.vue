@@ -12,7 +12,7 @@ import {
   useNotification,
 } from "naive-ui";
 import {ArrowPathIcon, ArrowTurnDownRightIcon} from "@heroicons/vue/20/solid";
-import {DocumentCheckIcon} from "@heroicons/vue/24/outline";
+// import {DocumentCheckIcon} from "@heroicons/vue/24/outline";
 import {Folder, List, Planet} from '@vicons/ionicons5'
 import {CircleFilled} from "@vicons/carbon";
 import {computed, defineEmits, h, onMounted, ref} from "vue";
@@ -392,16 +392,16 @@ onMounted(async () => {
             <template #header>
               <div class="flex space-x-2">
                 Include &nbsp;
-                <div
-                    class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 cursor-pointer p-1 text-xs flex justify-center border rounded-r-2xl px-2"
-                    @click="withClosed = !withClosed"
-                    :class="withClosed ? 'bg-green-200 dark:bg-green-400 dark:text-gray-900 border-green-600 hover:bg-green-300' : 'transparent border-transparent'"
-                >
-                  <n-icon class="flex items-center justify-center mr-1" name="arrow" size="14">
-                    <document-check-icon />
-                  </n-icon>
-                  Closed
-                </div>
+<!--                <div-->
+<!--                    class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 cursor-pointer p-1 text-xs flex justify-center border rounded-r-2xl px-2"-->
+<!--                    @click="withClosed = !withClosed"-->
+<!--                    :class="withClosed ? 'bg-green-200 dark:bg-green-400 dark:text-gray-900 border-green-600 hover:bg-green-300' : 'transparent border-transparent'"-->
+<!--                >-->
+<!--                  <n-icon class="flex items-center justify-center mr-1" name=DocumentCheckIcon"arrow" size="14">-->
+<!--                    <document-check-icon />-->
+<!--                  </n-icon>-->
+<!--                  Closed-->
+<!--                </div>-->
                 <div
                     class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 cursor-pointer p-1 text-xs flex justify-center border rounded-r-2xl px-2"
                     @click="withSubtasks = !withSubtasks"
