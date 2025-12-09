@@ -724,6 +724,7 @@ export default {
     */
     async getTimeTrackingRange(start, end, userId = '', space_id = '', folder_id = '', list_id = '', task_id = '') {
         if ((!start && start === undefined) || (!end && end === undefined)) return;
+        const startTime = performance.now();
         return new Promise((resolve, reject) => {
             const params = {
                 start_date: start.getTime(),
@@ -740,16 +741,21 @@ export default {
                 params.assignee = userId
             }
 
+            const url = `${teamRootUrl()}/time_entries?` + new URLSearchParams(params);
+
             request({
                 method: 'GET',
                 mode: 'no-cors',
-                url: `${teamRootUrl()}/time_entries?` + new URLSearchParams(params),
+                url: url,
 
                 headers: {
                     'Authorization': store.get('settings.clickup_access_token'),
                     'Content-Type': 'application/json'
                 }
             }, (error, response) => {
+                const elapsed = (performance.now() - startTime).toFixed(2);
+                console.log(`[API TIMING] GET ${url} - ${elapsed}ms`);
+
                 if (error) return reject(error)
                 const body = JSON.parse(response.body)
 
@@ -769,11 +775,14 @@ export default {
      * Create a new time tracking entry
      */
     createTimeTrackingEntry(taskId, description, start, end) {
+        const startTime = performance.now();
+        const url = `${teamRootUrl()}/time_entries`;
+
         return new Promise((resolve, reject) => {
 
             request({
                 method: 'POST',
-                url: `${teamRootUrl()}/time_entries`,
+                url: url,
                 headers: {
                     'Authorization': store.get('settings.clickup_access_token'),
                     'Content-Type': 'application/json'
@@ -786,6 +795,9 @@ export default {
                 }),
                 timeout: DEFAULT_CLICKUP_TIMEOUT,
             }, (error, response) => {
+                const elapsed = (performance.now() - startTime).toFixed(2);
+                console.log(`[API TIMING] POST ${url} - ${elapsed}ms`);
+
                 if (error) return reject(error)
                 const body = JSON.parse(response.body)
 
@@ -802,11 +814,14 @@ export default {
      * Update an exisiting time tracking entry
      */
     updateTimeTrackingEntry(entryId, description, start, end) {
+        const startTime = performance.now();
+        const url = `${teamRootUrl()}/time_entries/${entryId}`;
+
         return new Promise((resolve, reject) => {
 
             request({
                 method: 'PUT',
-                url: `${teamRootUrl()}/time_entries/${entryId}`,
+                url: url,
                 headers: {
                     'Authorization': store.get('settings.clickup_access_token'),
                     'Content-Type': 'application/json'
@@ -818,6 +833,9 @@ export default {
                 }),
                 timeout: DEFAULT_CLICKUP_TIMEOUT,
             }, (error, response) => {
+                const elapsed = (performance.now() - startTime).toFixed(2);
+                console.log(`[API TIMING] PUT ${url} - ${elapsed}ms`);
+
                 if (error) return reject(error)
                 const body = JSON.parse(response.body)
 
@@ -834,17 +852,23 @@ export default {
      * Deleta a time tracking entry
      */
     deleteTimeTrackingEntry(entryId) {
+        const startTime = performance.now();
+        const url = `${teamRootUrl()}/time_entries/${entryId}`;
+
         return new Promise((resolve, reject) => {
 
             request({
                 method: 'DELETE',
-                url: `${teamRootUrl()}/time_entries/${entryId}`,
+                url: url,
                 headers: {
                     'Authorization': store.get('settings.clickup_access_token'),
                     'Content-Type': 'application/json'
                 },
                 timeout: DEFAULT_CLICKUP_TIMEOUT
             }, (error, response) => {
+                const elapsed = (performance.now() - startTime).toFixed(2);
+                console.log(`[API TIMING] DELETE ${url} - ${elapsed}ms`);
+
                 if (error) return reject(error)
                 resolve(JSON.parse(response.body).data[0])
             })

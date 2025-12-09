@@ -50,8 +50,13 @@
       <template v-slot:title="{ title }">
         <div class="flex items-center space-x-4">
           <span aria-label="false" type="false">
+            <template v-if="loadingEvents">
+              <span class="mr-3 inline-flex items-center">
+                <span class="w-2 h-2 bg-blue-600 dark:bg-blue-400 rounded-full animate-ping"></span>
+              </span>
+            </template>
             {{ title }}
-            <template v-if="events.length > 0">
+            <template if="events.length > 0">
               <clock-icon class="w-3 ml-3 -mt-0.5 inline-block dark:text-gray-400"/>
               <span class="italic text-xs dark:text-gray-400">{{ totalHoursOnDate(events) }}</span>
             </template>
@@ -113,7 +118,7 @@
 
       <!-- START | Custom Event template -->
       <template v-slot:event="{ event }">
-        <div class="vuecal__event-title">
+        <div class="vuecal__event-title" :class="{ 'opacity-50 pointer-events-none': deletingEntryIds.includes(event.entryId) }">
           <span class="dark:text-gray-100">
             {{ event.title }}
             <span v-if="event.spaceName" class="ml-1 text-xs text-gray-600 dark:text-gray-400 font-normal align-baseline">({{ event.spaceName }})</span>
@@ -186,7 +191,7 @@
         </div>
 
         <!-- START | Time from/to -->
-        <div class="vuecal__event-time dark:text-gray-400">
+        <div class="vuecal__event-time dark:text-gray-400" :class="{ 'opacity-50': deletingEntryIds.includes(event.entryId) }">
           {{ event.start.formatTime('HH:mm') }}
           <span class="mx-1">-</span>
           {{ event.end.formatTime('HH:mm') }}
@@ -214,6 +219,7 @@
         <TaskCreatorForm
             :end="selectedTask.end"
             :start="selectedTask.start"
+            :loading="loadingEvents"
             @close="cancelTaskCreation"
             @create="pushTimeTrackingEntry"
         />
@@ -284,6 +290,7 @@
           <div class="flex justify-end space-x-2">
             <n-button
                 round
+                :disabled="loadingEvents"
                 @click="closeDetailModal()"
                 class="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
             >
@@ -292,6 +299,8 @@
             <n-button
                 round
                 type="primary"
+                :disabled="loadingEvents"
+                :loading="loadingEvents"
                 @click="updateTimeTrackingEntry({ event: selectedTask })"
                 class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
             >
@@ -378,6 +387,8 @@ export default {
       createForm,
       events: ref([]),
       mentionable: ref([]),
+      loadingEvents: ref(false),
+      deletingEntryIds: ref([]),
 
       deleteCallable: ref(() => null),
       showTaskCreationModal: ref(false),
@@ -474,6 +485,7 @@ export default {
     },
 
     async fetchEvents({startDate, endDate}) {
+      this.loadingEvents = true;
       let customColorEnabled = false
       if (store.get("settings.custom_color_enabled")) {
         customColorEnabled = store.get("settings.custom_color_enabled")
@@ -493,7 +505,10 @@ export default {
             error,
             title: "Could not fetch time tracking entries",
             content: "Check your console & internet connection and try again",
-          }));
+          }))
+          .finally(() => {
+            this.loadingEvents = false;
+          });
     },
     /*
     |--------------------------------------------------------------------------
@@ -541,14 +556,14 @@ export default {
           }));
     },
 
-    pushTimeTrackingEntry(event) {
+    async pushTimeTrackingEntry(event) {
       console.log("pushTimeTrackingEntry")
       console.log(event)
-      this.closeCreationModal();
-      this.fetchEvents({
+      await this.fetchEvents({
         startDate: this.start_date,
         endDate: this.end_date
       })
+      this.closeCreationModal();
     },
 
     cancelTaskCreation() {
@@ -576,11 +591,15 @@ export default {
     async deleteSelectedTask() {
       if (isEmptyObject(this.selectedTask)) return;
 
+      const entryId = this.selectedTask.entryId;
+      this.loadingEvents = true;
+      this.deletingEntryIds.push(entryId);
+
       clickupService
-          .deleteTimeTrackingEntry(this.selectedTask.entryId)
+          .deleteTimeTrackingEntry(entryId)
           .then(() => {
             const taskIndex = this.events.findIndex(
-                (event) => event.entryId === this.selectedTask.entryId
+                (event) => event.entryId === entryId
             );
 
             this.events.splice(taskIndex, 1);
@@ -591,7 +610,14 @@ export default {
             error,
             title: "Delete failed",
             content: "There was a problem while calling Clickup. Check your console & internet connection and try again",
-          }));
+          }))
+          .finally(() => {
+            this.loadingEvents = false;
+            const index = this.deletingEntryIds.indexOf(entryId);
+            if (index > -1) {
+              this.deletingEntryIds.splice(index, 1);
+            }
+          });
     },
 
     /*
@@ -622,6 +648,7 @@ export default {
 
     updateTimeTrackingEntry({event, originalEvent}) {
       this.statisticsOpen = false;
+      this.loadingEvents = true;
 
       clickupService.updateTimeTrackingEntry(
           event.entryId,
@@ -655,6 +682,9 @@ export default {
               content: "There was a problem while pushing to Clickup. Check your console & internet connection and refresh the app",
             });
             // TODO: Reset event to what it was before failed update
+          })
+          .finally(() => {
+            this.loadingEvents = false;
           });
 
       originalEvent;

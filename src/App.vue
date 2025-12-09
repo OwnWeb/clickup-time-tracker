@@ -1,6 +1,6 @@
 <template>
   <n-config-provider :theme="currentTheme" :theme-overrides="currentThemeOverrides">
-    <n-notification-provider>
+    <n-notification-provider placement="bottom-right">
       <online-status-provider>
         <splash-screen />
         <router-view />

@@ -131,7 +131,30 @@ app.on('ready', async () => {
     }
     createWindow()
     createMenu()
+
+    // Pre-load hierarchy in the background on app start
+    // This ensures the cache is warm and fresh data is fetched silently
+    preloadHierarchy()
 })
+
+// Pre-load ClickUp hierarchy in the background
+// Cached data is available immediately, fresh data loads silently in background
+function preloadHierarchy() {
+    // Small delay to let the app finish initializing
+    setTimeout(() => {
+        console.log('Pre-loading ClickUp hierarchy in background...')
+
+        // Fetch hierarchy - uses cache if available, fetches fresh if needed
+        clickupService.getCachedHierarchy()
+            .then(() => {
+                console.log('Hierarchy pre-loaded and ready')
+            })
+            .catch(err => {
+                console.error('Failed to pre-load hierarchy:', err)
+                // Silent failure - will load on demand when user opens task creator
+            })
+    }, 2000) // 2 second delay to avoid blocking app startup
+}
 
 // Exit cleanly on request from parent process in development mode.
 if (isDevelopment) {

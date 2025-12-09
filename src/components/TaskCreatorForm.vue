@@ -32,6 +32,10 @@ const props = defineProps({
     type: Date,
     required: true,
   },
+  loading: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const notification = useNotification();
@@ -42,6 +46,7 @@ const emit = defineEmits(['close', 'create']);
 // Refs
 let clickUpItems = ref([]);
 let loadingClickup = ref(false);
+let loadingCreate = ref(false);
 let mentionable = ref([]);
 const withClosed = ref(false);
 const withSubtasks = ref(false);
@@ -143,10 +148,11 @@ async function getClickUpHierarchy() {
 }
 
 async function refreshClickUpHierarchy() {
+  // Keep previous hierarchy visible while loading new data
   loadingClickup.value = true;
   new Promise((resolve, reject) => {
     ipcRenderer.send("refresh-clickup-hierarchy");
-    console.info("Fetching Clickup hierarchy (from cache when available)...");
+    console.info("Refreshing Clickup hierarchy in background (previous data remains accessible)...");
     ipcRenderer.once("set-clickup-hierarchy", (event, hierarchy) => {
       resolve(hierarchy)
     });
@@ -161,11 +167,13 @@ async function refreshClickUpHierarchy() {
     });
 
   }).then((hierarchy) => {
+    // Only update hierarchy after new data is loaded (keeps old data visible during load)
     clickUpItems.value = hierarchy
     onSuccess({
       title: "Clickup hierarchy refreshed",
       content: "The Clickup hierarchy has been refreshed in the background",
     })
+  }).finally(() => {
     loadingClickup.value = false;
   })
 }
@@ -187,11 +195,11 @@ function createTask() {
       })
     } else {
       pushToClickup()
-
     }
   })
 
   const pushToClickup = () => {
+    loadingCreate.value = true;
     clickupService.createTimeTrackingEntry(
         formValue.value.task.taskId,
         formValue.value.task.description,
@@ -216,6 +224,8 @@ function createTask() {
         title: "Looks like something went wrong",
         content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
       });
+    }).finally(() => {
+      loadingCreate.value = false;
     });
   }
 }
@@ -353,7 +363,7 @@ onMounted(async () => {
           <n-tree-select
               v-model:value="formValue.task.taskId"
               :options="options"
-              :disabled="loadingClickup"
+              :disabled="loadingClickup && clickUpItems.length === 0"
               :placeholder="
                 loadingClickup
                   ? 'Loading tasks...'
@@ -422,7 +432,7 @@ onMounted(async () => {
             :render-label="renderMentionLabel"
             placeholder="Describe what you worked on"
             type="textarea"
-            :disabled="loadingClickup"
+            :disabled="loadingClickup && clickUpItems.length === 0"
             class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200 border dark:border-gray-700"
         />
       </n-form-item>
@@ -432,6 +442,7 @@ onMounted(async () => {
     <div class="flex justify-end space-x-2">
       <n-button
           round
+          :disabled="loadingCreate || loading"
           @click="cancelTaskCreation"
           class="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
       >
@@ -440,6 +451,8 @@ onMounted(async () => {
       <n-button
           round
           type="primary"
+          :disabled="loadingCreate || loading"
+          :loading="loadingCreate || loading"
           @click="createTask"
           class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
       >
