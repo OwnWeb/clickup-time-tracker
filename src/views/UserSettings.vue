@@ -380,7 +380,11 @@ export default {
     }
 
     async function loadHierarchyForSelection(forceRefresh = false) {
-      loadingHierarchy.value = true;
+      // Delay showing loading indicator to avoid flash for cached data
+      const loadingTimeout = setTimeout(() => {
+        loadingHierarchy.value = true;
+      }, 200); // Only show loading if it takes more than 200ms
+
       try {
         const hierarchy = await new Promise((resolve, reject) => {
           // Use refresh handler if forceRefresh is true (clears cache)
@@ -394,6 +398,9 @@ export default {
           });
         });
 
+        // Clear the timeout if we got data quickly (from cache)
+        clearTimeout(loadingTimeout);
+
         // Transform to NTreeSelect format
         hierarchyTreeOptions.value = transformToTreeSelectFormat(hierarchy);
 
@@ -405,6 +412,7 @@ export default {
         hierarchyLoaded.value = true;
         notification.success({title: "Hierarchy loaded!", duration: 1500});
       } catch (error) {
+        clearTimeout(loadingTimeout); // Clear timeout on error too
         console.error(error);
         notification.error({
           title: "Failed to load hierarchy",
@@ -652,9 +660,13 @@ export default {
         const hasSelection = model.value.hierarchy_filter.selection?.spaces &&
             Object.keys(model.value.hierarchy_filter.selection.spaces).length > 0;
 
-        if (hasSelection) {
+        // Only load if we don't already have the hierarchy data
+        if (hasSelection && hierarchyTreeOptions.value.length === 0) {
           // Auto-load hierarchy to show current selection
           loadHierarchyForSelection();
+        } else if (hasSelection && hierarchyTreeOptions.value.length > 0) {
+          // We already have the data, just mark as loaded
+          hierarchyLoaded.value = true;
         }
       }
     });

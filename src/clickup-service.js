@@ -6,8 +6,8 @@ import {ClickUpItemFactory} from "@/model/ClickUpModels";
 const BASE_URL = 'https://api.clickup.com/api/v2';
 
 // Cache keys
-const HIERARCHY_CACHE_KEY = 'hierarchy';
-const HIERARCHY_METADATA_CACHE_KEY = 'hierarchy_metadata';
+export const HIERARCHY_CACHE_KEY = 'hierarchy';
+export const HIERARCHY_METADATA_CACHE_KEY = 'hierarchy_metadata';
 const USERS_CACHE_KEY = 'users';
 
 // Timeout and pagination constants
@@ -126,6 +126,9 @@ export default {
         }
     },
 
+    // Clears both hierarchy and metadata caches
+    // Use this when settings change (team ID, access token, hierarchy filter)
+    // Individual refresh operations should clear their specific cache only
     clearCachedHierarchy() {
         cache.clear(HIERARCHY_CACHE_KEY)
         cache.clear(HIERARCHY_METADATA_CACHE_KEY)

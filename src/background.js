@@ -11,7 +11,7 @@ init({
 import { app, protocol, ipcMain, BrowserWindow } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
-import clickupService from '@/clickup-service'
+import clickupService, {HIERARCHY_CACHE_KEY} from '@/clickup-service'
 import cache from '@/cache'
 import { createMenu } from '@/app-menu'
 import updater from '@/app-updater'
@@ -34,7 +34,7 @@ ipcMain.on('get-clickup-hierarchy', (event) => {
 
 // Clear ClickUp hierarchy cache & fetch fresh hierarchy
 ipcMain.on('refresh-clickup-hierarchy', (event) => {
-    clickupService.clearCachedHierarchy()
+    cache.clear(HIERARCHY_CACHE_KEY)  // Only clear the hierarchy cache (not metadata)
     clickupService.getCachedHierarchy()
         .then(hierarchy => event.reply('set-clickup-hierarchy', hierarchy))
         .catch(err => event.reply('fetch-clickup-hierarchy-error', err))

@@ -124,7 +124,11 @@ const customTheme = {
 
 // A function that builds the cascader options. loops through the clickupItems and builds the options
 async function getClickUpHierarchy() {
-  loadingClickup.value = true;
+  // Delay showing loading indicator to avoid flash for cached data
+  const loadingTimeout = setTimeout(() => {
+    loadingClickup.value = true;
+  }, 200); // Only show loading if it takes more than 200ms
+
   new Promise((resolve, reject) => {
     ipcRenderer.send("get-clickup-hierarchy");
     console.info("Fetching Clickup hierarchy (from cache when available)...");
@@ -142,7 +146,11 @@ async function getClickUpHierarchy() {
     });
 
   }).then((hierarchy) => {
+    clearTimeout(loadingTimeout); // Clear timeout when data arrives
     clickUpItems.value = hierarchy
+    loadingClickup.value = false;
+  }).catch(() => {
+    clearTimeout(loadingTimeout); // Clear timeout on error too
     loadingClickup.value = false;
   })
 }
@@ -337,7 +345,10 @@ function normalize(v) {
 
 // Fetch Clickup spaces on mount
 onMounted(async () => {
-  await getClickUpHierarchy()
+  // Only fetch if we don't already have data
+  if (clickUpItems.value.length === 0) {
+    await getClickUpHierarchy()
+  }
 })
 </script>
 
