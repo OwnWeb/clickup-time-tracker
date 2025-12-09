@@ -12,6 +12,7 @@ import { app, protocol, ipcMain, BrowserWindow } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
 import clickupService from '@/clickup-service'
+import cache from '@/cache'
 import { createMenu } from '@/app-menu'
 import updater from '@/app-updater'
 import path from 'path';
@@ -37,6 +38,22 @@ ipcMain.on('refresh-clickup-hierarchy', (event) => {
     clickupService.getCachedHierarchy()
         .then(hierarchy => event.reply('set-clickup-hierarchy', hierarchy))
         .catch(err => event.reply('fetch-clickup-hierarchy-error', err))
+})
+
+// Fetch ClickUp hierarchy metadata (no tasks) for settings UI
+ipcMain.on('get-clickup-hierarchy-metadata', (event) => {
+    clickupService.getCachedHierarchyMetadata()
+        .then(hierarchy => event.reply('set-clickup-hierarchy-metadata', hierarchy))
+        .catch(err => event.reply('fetch-clickup-hierarchy-metadata-error', err))
+})
+
+// Refresh ClickUp hierarchy metadata (force reload without cache)
+ipcMain.on('refresh-clickup-hierarchy-metadata', (event) => {
+    // Clear metadata cache and fetch fresh
+    cache.clear('hierarchy_metadata')
+    clickupService.getCachedHierarchyMetadata()
+        .then(hierarchy => event.reply('set-clickup-hierarchy-metadata', hierarchy))
+        .catch(err => event.reply('fetch-clickup-hierarchy-metadata-error', err))
 })
 
 //Fetch color palette from ClickUp

@@ -64,7 +64,64 @@
           <n-switch v-model:value="model.enable_statistics" :default-value="false" />
           <label class="ml-3 text-gray-800 dark:text-gray-200">Enable statistics</label>
         </n-form-item>
+
         <hr class="my-6 dark:border-gray-700" />
+        <!-- START | Hierarchy Selection -->
+        <label class="absolute px-1.5 bg-white dark:bg-gray-800 -ml-4 -mt-9">Hierarchy Selection</label>
+
+        <n-form-item :show-feedback="false" :show-label="false" path="hierarchy_filter.enabled">
+          <n-switch v-model:value="model.hierarchy_filter.enabled" @update:value="onHierarchyFilterToggle" />
+          <label class="ml-3 text-gray-800 dark:text-gray-200">
+            Enable hierarchy filtering
+            <div class="text-sm text-gray-500 dark:text-gray-400">
+              Only fetch selected items (improves performance)
+            </div>
+          </label>
+        </n-form-item>
+
+        <div v-if="model.hierarchy_filter && model.hierarchy_filter.enabled" class="mt-4">
+          <div class="flex gap-2 mb-4">
+            <n-button @click="loadHierarchyForSelection(hierarchyLoaded)" :loading="loadingHierarchy" secondary>
+              <template #icon>
+                <arrow-path-icon class="w-4" />
+              </template>
+              {{ hierarchyLoaded ? 'Refresh' : 'Load' }} Hierarchy
+            </n-button>
+
+            <n-button v-if="hierarchyLoaded" @click="selectAllHierarchy" secondary type="success">
+              Select All
+            </n-button>
+
+            <n-button v-if="hierarchyLoaded" @click="deselectAllHierarchy" secondary type="warning">
+              Deselect All
+            </n-button>
+          </div>
+
+          <n-form-item v-if="hierarchyLoaded" label="Select items to track" path="hierarchy_filter.selection">
+            <n-tree-select
+                v-model:value="selectedHierarchyKeys"
+                :options="hierarchyTreeOptions"
+                :checkable="true"
+                :cascade="true"
+                :check-strategy="'parent'"
+                :show-path="true"
+                :multiple="true"
+                :default-expand-all="false"
+                :filterable="true"
+                :render-prefix="renderHierarchyIcon"
+                placeholder="Select lists to track..."
+                class="w-full dark:bg-gray-800 dark:text-gray-200"
+            />
+          </n-form-item>
+
+          <div v-if="hierarchyLoaded && selectedHierarchyKeys.length === 0"
+               class="text-yellow-600 dark:text-yellow-400 text-sm">
+            ⚠️ No items selected - no tasks will be available
+          </div>
+        </div>
+
+        <hr class="my-6 dark:border-gray-700" />
+        <!-- END | Hierarchy Selection -->
         <!-- END | Feature toggles -->
 
         <!-- START | Styling -->
@@ -219,7 +276,7 @@
 </template>
 
 <script>
-import {h, ref} from "vue";
+import {h, ref, onMounted} from "vue";
 import {useRouter} from "vue-router";
 import {
   NForm,
@@ -233,9 +290,11 @@ import {
   useNotification,
   NDynamicInput,
   NInputNumber,
-  NIcon
+  NIcon,
+  NTreeSelect
 } from "naive-ui";
-import {BackspaceIcon, ClockIcon} from "@heroicons/vue/24/outline";
+import {BackspaceIcon, ClockIcon, ArrowPathIcon} from "@heroicons/vue/24/outline";
+import {ipcRenderer} from 'electron';
 import clickupService from '@/clickup-service';
 import store from "@/store";
 import cache from "@/cache";
@@ -255,9 +314,11 @@ export default {
     NPopconfirm,
     BackspaceIcon,
     ClockIcon,
+    ArrowPathIcon,
     NColorPicker,
     NDynamicInput,
     NInputNumber,
+    NTreeSelect,
   },
 
   setup() {
@@ -267,6 +328,23 @@ export default {
     const model = ref(store.get("settings") || {});
     const hours = ref(Array.from(Array(25).keys()).map((i) => ({label: `${i}:00`, value: i})));
     let custom_color = ref(false);
+
+    // Initialize hierarchy_filter if not exists
+    if (!model.value.hierarchy_filter) {
+      model.value.hierarchy_filter = {
+        enabled: false,
+        version: 1,
+        selection: {
+          spaces: {}
+        }
+      };
+    }
+
+    // Hierarchy selection refs
+    const hierarchyLoaded = ref(false);
+    const loadingHierarchy = ref(false);
+    const hierarchyTreeOptions = ref([]);
+    const selectedHierarchyKeys = ref([]);
 
     const clickUpTypeOptions = [
       {
@@ -291,11 +369,295 @@ export default {
       },
     ];
 
-    function mustFlushCachesAfterPersist() {
-      // Either the CU acces token or team id has changed
-      return model.value.clickup_access_token !== store.get('settings.clickup_access_token')
-          || model.value.clickup_team_id !== store.get('settings.clickup_team_id')
+    // Hierarchy selection functions
+    function onHierarchyFilterToggle(enabled) {
+      if (!enabled) {
+        // Clear selection when disabling
+        hierarchyLoaded.value = false;
+        hierarchyTreeOptions.value = [];
+        selectedHierarchyKeys.value = [];
+      }
     }
+
+    async function loadHierarchyForSelection(forceRefresh = false) {
+      loadingHierarchy.value = true;
+      try {
+        const hierarchy = await new Promise((resolve, reject) => {
+          // Use refresh handler if forceRefresh is true (clears cache)
+          const eventName = forceRefresh ? "refresh-clickup-hierarchy-metadata" : "get-clickup-hierarchy-metadata";
+          ipcRenderer.send(eventName);
+          ipcRenderer.once("set-clickup-hierarchy-metadata", (event, data) => {
+            resolve(data);
+          });
+          ipcRenderer.once("fetch-clickup-hierarchy-metadata-error", (event, error) => {
+            reject(error);
+          });
+        });
+
+        // Transform to NTreeSelect format
+        hierarchyTreeOptions.value = transformToTreeSelectFormat(hierarchy);
+
+        // Load existing selection if any
+        if (model.value.hierarchy_filter?.selection) {
+          selectedHierarchyKeys.value = extractSelectedKeys(model.value.hierarchy_filter.selection);
+        }
+
+        hierarchyLoaded.value = true;
+        notification.success({title: "Hierarchy loaded!", duration: 1500});
+      } catch (error) {
+        console.error(error);
+        notification.error({
+          title: "Failed to load hierarchy",
+          content: "Please check your connection and try again"
+        });
+      } finally {
+        loadingHierarchy.value = false;
+      }
+    }
+
+    function renderHierarchyIcon(option) {
+      let icon;
+      const color = option.option.color || '#gray';
+
+      switch (option.option.type) {
+        case 'space':
+          icon = Planet;
+          break;
+        case 'folder':
+          icon = Folder;
+          break;
+        case 'list':
+          icon = List;
+          break;
+        default:
+          icon = List;
+      }
+
+      return h(NIcon, {size: '15px', color: color}, {default: () => h(icon)});
+    }
+
+    function selectAllHierarchy() {
+      // Recursively collect all list IDs from the tree
+      const collectAllListIds = (nodes) => {
+        const ids = [];
+        if (!nodes) return ids;
+
+        nodes.forEach(node => {
+          // Add this node's key (spaces, folders, lists all have keys)
+          ids.push(node.key);
+
+          // Recursively collect from children
+          if (node.children) {
+            ids.push(...collectAllListIds(node.children));
+          }
+        });
+
+        return ids;
+      };
+
+      selectedHierarchyKeys.value = collectAllListIds(hierarchyTreeOptions.value);
+    }
+
+    function deselectAllHierarchy() {
+      selectedHierarchyKeys.value = [];
+    }
+
+    // Helper functions for hierarchy tree transformation
+    function transformToTreeSelectFormat(hierarchy) {
+      if (!hierarchy || !Array.isArray(hierarchy)) return [];
+      return hierarchy.map(space => ({
+        key: space.id,
+        label: space.name,
+        type: space.type,
+        color: space.color,
+        disabled: false,
+        children: transformChildren(space.children || [])
+      }));
+    }
+
+    function transformChildren(items) {
+      if (!items || !Array.isArray(items)) return undefined;
+      const children = items.map(item => ({
+        key: item.id,
+        label: item.name,
+        type: item.type,
+        color: item.color,
+        disabled: false,
+        children: item.children ? transformChildren(item.children) : undefined
+      }));
+      return children.length > 0 ? children : undefined;
+    }
+
+    function extractSelectedKeys(selection) {
+      const keys = [];
+      if (!selection || !selection.spaces) return keys;
+
+      Object.values(selection.spaces).forEach(space => {
+        // If space has selectAll flags set, add the space key itself (parent selection)
+        if (space.selectAllFolders || space.selectAllLists) {
+          keys.push(space.id);
+        } else {
+          // Otherwise, check folders and lists individually
+
+          // Check folders
+          if (space.folders) {
+            Object.values(space.folders).forEach(folder => {
+              // If folder has selectAllLists, add the folder key (parent selection)
+              if (folder.selectAllLists) {
+                keys.push(folder.id);
+              } else {
+                // Otherwise, add individual list keys
+                if (folder.lists) {
+                  Object.values(folder.lists).forEach(list => {
+                    if (list.selected) keys.push(list.id);
+                  });
+                }
+              }
+            });
+          }
+
+          // Check space-level lists
+          if (space.lists) {
+            Object.values(space.lists).forEach(list => {
+              if (list.selected) keys.push(list.id);
+            });
+          }
+        }
+      });
+
+      return keys;
+    }
+
+    function buildSelectionStructure(selectedKeys, treeOptions) {
+      const selection = { spaces: {} };
+      const keySet = new Set(selectedKeys);
+
+      treeOptions.forEach(space => {
+        // Check if this space key itself is in the selection (parent selected)
+        const spaceKeySelected = keySet.has(space.key);
+
+        const spaceData = {
+          id: space.key,
+          name: space.label,
+          selected: true,
+          selectAllFolders: false,
+          selectAllLists: false,
+          folders: {},
+          lists: {}
+        };
+
+        if (space.children) {
+          const folders = space.children.filter(c => c.type === 'folder');
+          const spaceLists = space.children.filter(c => c.type === 'list');
+
+          // Check if any child keys are selected
+          const hasChildKeysSelected = selectedKeys.some(key =>
+            key !== space.key &&
+            space.children.some(child => child.key === key ||
+              (child.children && child.children.some(grandchild => grandchild.key === key))
+            )
+          );
+
+          // If space key is selected but no children keys → select all children
+          if (spaceKeySelected && !hasChildKeysSelected) {
+            spaceData.selectAllFolders = true;
+            spaceData.selectAllLists = true;
+          } else {
+            // Process folders
+            if (folders.length > 0) {
+              let allFoldersSelected = true;
+
+              folders.forEach(folder => {
+                const folderKeySelected = keySet.has(folder.key);
+                const folderLists = folder.children || [];
+                const selectedListsInFolder = folderLists.filter(list => keySet.has(list.key));
+
+                // If folder key is selected but no list keys → select all lists
+                if (folderKeySelected && selectedListsInFolder.length === 0) {
+                  spaceData.folders[folder.key] = {
+                    id: folder.key,
+                    name: folder.label,
+                    selected: true,
+                    selectAllLists: true,
+                    lists: {}
+                  };
+                } else if (selectedListsInFolder.length > 0) {
+                  spaceData.folders[folder.key] = {
+                    id: folder.key,
+                    name: folder.label,
+                    selected: true,
+                    selectAllLists: selectedListsInFolder.length === folderLists.length,
+                    lists: {}
+                  };
+
+                  selectedListsInFolder.forEach(list => {
+                    spaceData.folders[folder.key].lists[list.key] = {
+                      id: list.key,
+                      name: list.label,
+                      selected: true
+                    };
+                  });
+                } else {
+                  allFoldersSelected = false;
+                }
+              });
+
+              // Check if all folders are selected
+              spaceData.selectAllFolders = Object.keys(spaceData.folders).length === folders.length && allFoldersSelected;
+            }
+
+            // Process space-level lists
+            if (spaceLists.length > 0) {
+              const selectedSpaceLists = spaceLists.filter(list => keySet.has(list.key));
+
+              selectedSpaceLists.forEach(list => {
+                spaceData.lists[list.key] = {
+                  id: list.key,
+                  name: list.label,
+                  selected: true
+                };
+              });
+
+              // Check if all space-level lists are selected
+              if (selectedSpaceLists.length === spaceLists.length && folders.length === 0) {
+                spaceData.selectAllLists = true;
+              }
+            }
+          }
+        }
+
+        selection.spaces[space.key] = spaceData;
+      });
+
+      return selection;
+    }
+
+    function mustFlushCachesAfterPersist() {
+      const oldFilter = store.get('settings.hierarchy_filter');
+      const newFilter = model.value.hierarchy_filter;
+
+      // Either the CU access token or team id has changed
+      const credentialsChanged = model.value.clickup_access_token !== store.get('settings.clickup_access_token')
+          || model.value.clickup_team_id !== store.get('settings.clickup_team_id');
+
+      // Hierarchy filter changed
+      const filterChanged = JSON.stringify(oldFilter) !== JSON.stringify(newFilter);
+
+      return credentialsChanged || filterChanged;
+    }
+
+    // Auto-load hierarchy on mount if filtering is enabled and has selection
+    onMounted(() => {
+      if (model.value.hierarchy_filter?.enabled) {
+        const hasSelection = model.value.hierarchy_filter.selection?.spaces &&
+            Object.keys(model.value.hierarchy_filter.selection.spaces).length > 0;
+
+        if (hasSelection) {
+          // Auto-load hierarchy to show current selection
+          loadHierarchyForSelection();
+        }
+      }
+    });
 
     return {
       form,
@@ -303,6 +665,16 @@ export default {
       hours,
       custom_color,
       clickUpTypeOptions,
+      // Hierarchy selection
+      hierarchyLoaded,
+      loadingHierarchy,
+      hierarchyTreeOptions,
+      selectedHierarchyKeys,
+      onHierarchyFilterToggle,
+      loadHierarchyForSelection,
+      renderHierarchyIcon,
+      selectAllHierarchy,
+      deselectAllHierarchy,
       renderDropDownIcon: (option) => {
         return [
           h('div', { style: 'display: flex; align-items: center;' }, [
@@ -316,6 +688,13 @@ export default {
         form.value
             .validate()
             .then(() => {
+              // Convert selectedHierarchyKeys back to nested structure
+              if (model.value.hierarchy_filter?.enabled && hierarchyLoaded.value) {
+                model.value.hierarchy_filter.selection = buildSelectionStructure(
+                    selectedHierarchyKeys.value,
+                    hierarchyTreeOptions.value
+                );
+              }
 
               if (mustFlushCachesAfterPersist()) {
                 cache.flush();

@@ -7,8 +7,15 @@ const BASE_URL = 'https://api.clickup.com/api/v2';
 
 // Cache keys
 const HIERARCHY_CACHE_KEY = 'hierarchy';
+const HIERARCHY_METADATA_CACHE_KEY = 'hierarchy_metadata';
 const USERS_CACHE_KEY = 'users';
-const DEFAULT_CLICKUP_TIMEOUT = 3000;
+
+// Timeout and pagination constants
+const DEFAULT_CLICKUP_TIMEOUT = 30000; // 30 seconds
+const CLICKUP_TASKS_PER_PAGE = 100; // ClickUp API pagination limit
+
+// Cache duration
+const CACHE_DEFAULT = 24 * 7 * 60 * 60; // 7 days in seconds
 
 // Factory
 // The factory is used to create the correct model objects from the API response.
@@ -50,7 +57,7 @@ export default {
     },
 
     // Timeout and retry wrapper function
-    async withTimeoutAndRetry(fn, timeout = 5000, retries = 5, retryDelay = 1000) {
+    async withTimeoutAndRetry(fn, timeout = 120000, retries = 5, retryDelay = 1000) {
         for (let attempt = 1; attempt <= retries; attempt++) {
             try {
                 return await Promise.race([
@@ -73,13 +80,67 @@ export default {
     /*
      * Builds a hierarchy of spaces, folders, lists, tasks and subtasks, from a team.
      * Can be used to display the treeview options.
+     * Supports filtering based on hierarchy_filter settings.
      */
     async getHierarchy() {
         this.requests = 0;
-        console.log("Getting hierarchy from ClickUp")
-        const spaces = await this.getSpaces().catch(e => {
+        const hierarchyFilter = store.get('settings.hierarchy_filter');
+
+        // If filtering disabled or not configured, fetch everything (existing behavior)
+        if (!hierarchyFilter || !hierarchyFilter.enabled || !hierarchyFilter.selection) {
+            return this._getFullHierarchy();
+        }
+
+        // Check if selection is empty
+        const hasSelection = hierarchyFilter.selection.spaces &&
+            Object.keys(hierarchyFilter.selection.spaces).length > 0;
+
+        if (!hasSelection) {
+            console.warn("Hierarchy filter enabled but no selection configured, fetching nothing");
+            return [];
+        }
+
+        // Use filtered approach
+        return this._getFilteredHierarchy(hierarchyFilter.selection);
+    },
+
+    async getCachedHierarchy() {
+        try {
+            const cached = cache.get(HIERARCHY_CACHE_KEY)
+
+            if (cached) {
+                console.log("Got hierarchy from cache")
+                return cached
+            }
+
+            let hierarchy = await this.getHierarchy().catch(e => {
+                console.error(e)
+            })
+            return cache.put(
+                HIERARCHY_CACHE_KEY,
+                hierarchy,
+                CACHE_DEFAULT
+            )
+        } catch (e) {
             console.error(e)
-        })
+        }
+    },
+
+    clearCachedHierarchy() {
+        cache.clear(HIERARCHY_CACHE_KEY)
+        cache.clear(HIERARCHY_METADATA_CACHE_KEY)
+    },
+
+    /*
+     * Internal: Fetches complete hierarchy (all spaces/folders/lists/tasks)
+     * This is the original getHierarchy() logic for backwards compatibility
+     */
+    async _getFullHierarchy() {
+        console.log("Getting FULL hierarchy from ClickUp");
+        const spaces = await this.getSpaces().catch(e => {
+            console.error(e);
+        });
+
         try {
             console.log(`Got ${spaces.length} spaces from ClickUp (${this.requests} rq)`);
             if (spaces.length > 0) {
@@ -99,7 +160,7 @@ export default {
                                 console.error(e);
                                 return [];
                             });
-                            console.log(`Got ${folderLists.length} lists for folder ${folder.name} (${this.requests} rq)`);
+                            console.log(`Got ${folderLists.length} lists for folder ${folder.name} (space ${space.name}) (${this.requests} rq)`);
 
                             if (folderLists.length > 0) {
                                 await Promise.all(folderLists.map(async (folderList) => {
@@ -141,32 +202,229 @@ export default {
             console.error(e);
         }
 
+        return [];
     },
 
-    async getCachedHierarchy() {
+    /*
+     * Helper: Check if we should process items (either selectAll flag or explicit selection)
+     */
+    _shouldProcess(selectAllFlag, itemsObject) {
+        return selectAllFlag || (itemsObject && Object.keys(itemsObject).length > 0);
+    },
+
+    /*
+     * Helper: Fetches tasks for all lists and adds them as children
+     */
+    async _fetchTasksForLists(lists) {
+        if (lists.length === 0) return;
+
+        await Promise.all(lists.map(async (list) => {
+            const tasks = await this.withTimeoutAndRetry(() =>
+                this.getTasksFromList(list.id)
+            ).catch(e => {
+                console.error(e);
+                return [];
+            });
+            console.log(`Got ${tasks.length} tasks for list ${list.name} (${this.requests} rq)`);
+            list.addChildren(tasks);
+        })).catch(e => console.error(e));
+    },
+
+    /*
+     * Internal: Fetches filtered hierarchy based on user selection
+     * Only fetches from selected spaces/folders/lists
+     * Supports selectAll* flags to include new items automatically
+     * Always fetches tasks for selected lists
+     */
+    async _getFilteredHierarchy(selection) {
+        console.log("Getting FILTERED hierarchy from ClickUp");
+        console.log(`Selection: ${JSON.stringify(selection)}`);
+
+        if (!selection || !selection.spaces) {
+            console.warn("Invalid selection structure");
+            return [];
+        }
+
+        // Get all spaces first
+        const allSpaces = await this.getSpaces().catch(e => {
+            console.error(e);
+            return [];
+        });
+
+        // Filter to selected spaces
+        const selectedSpaceIds = Object.keys(selection.spaces);
+        const filteredSpaces = allSpaces.filter(space => selectedSpaceIds.includes(space.id));
+
+        console.log(`Filtered to ${filteredSpaces.length}/${allSpaces.length} spaces (${this.requests} rq)`);
+
+        if (filteredSpaces.length === 0) {
+            return [];
+        }
+
+        // For each selected space, fetch selected folders/lists
+        await Promise.all(filteredSpaces.map(async (space) => {
+            const spaceConfig = selection.spaces[space.id];
+            console.log(`Processing space: ${space.name} (${spaceConfig.folders ? Object.keys(spaceConfig.folders).length : 0} folders, ${spaceConfig.lists ? Object.keys(spaceConfig.lists).length : 0} lists)`);
+
+            // Process folders if any are configured OR if selectAllFolders is true
+            if (this._shouldProcess(spaceConfig.selectAllFolders, spaceConfig.folders)) {
+                // Fetch all folders for this space
+                const allFolders = await this.withTimeoutAndRetry(() =>
+                    this.getFolders(space.id)
+                ).catch(e => {
+                    console.error(e);
+                    return [];
+                });
+
+                // Filter to selected folders OR all if selectAllFolders is true
+                const filteredFolders = spaceConfig.selectAllFolders
+                    ? allFolders
+                    : allFolders.filter(folder => Object.keys(spaceConfig.folders).includes(folder.id));
+
+                console.log(`Filtered to ${filteredFolders.length}/${allFolders.length} folders in space ${space.name} (${this.requests} rq)`);
+
+                // For each selected folder, get its lists
+                await Promise.all(filteredFolders.map(async (folder) => {
+                    const folderConfig = (spaceConfig.folders && spaceConfig.folders[folder.id]) || {};
+
+                    // If selectAllFolders is true, treat each folder as having selectAllLists: true
+                    const shouldSelectAllLists = spaceConfig.selectAllFolders || folderConfig.selectAllLists;
+
+                    // Fetch all lists in folder
+                    const allLists = await this.withTimeoutAndRetry(() =>
+                        this.getFolderedLists(folder.id)
+                    ).catch(e => {
+                        console.error(e);
+                        return [];
+                    });
+
+                    // Filter to selected lists OR all if selectAllLists is true
+                    const filteredLists = shouldSelectAllLists
+                        ? allLists
+                        : allLists.filter(list => Object.keys(folderConfig.lists || {}).includes(list.id));
+
+                    console.log(`Filtered to ${filteredLists.length}/${allLists.length} lists in folder ${folder.name} (${this.requests} rq)`);
+
+                    // Fetch tasks for each list
+                    await this._fetchTasksForLists(filteredLists);
+                    if (filteredLists.length > 0) {
+                        folder.addChildren(filteredLists);
+                    }
+                })).catch(e => console.error(e));
+
+                if (filteredFolders.length > 0) {
+                    space.addChildren(filteredFolders);
+                }
+            }
+
+            // Process space-level lists (not in folders) if any are configured OR if selectAllLists is true
+            if (this._shouldProcess(spaceConfig.selectAllLists, spaceConfig.lists)) {
+                // Fetch all space-level lists
+                const allLists = await this.withTimeoutAndRetry(() =>
+                    this.getLists(space.id)
+                ).catch(e => {
+                    console.error(e);
+                    return [];
+                });
+
+                // Filter to selected lists OR all if selectAllLists is true
+                const filteredLists = spaceConfig.selectAllLists
+                    ? allLists
+                    : allLists.filter(list => Object.keys(spaceConfig.lists).includes(list.id));
+
+                console.log(`Filtered to ${filteredLists.length}/${allLists.length} space-level lists in ${space.name} (${this.requests} rq)`);
+
+                // Fetch tasks for each list
+                await this._fetchTasksForLists(filteredLists);
+                if (filteredLists.length > 0) {
+                    space.addChildren(filteredLists);
+                }
+            }
+        })).catch(e => console.error(e));
+
+        console.log(`Filtered hierarchy complete (${this.requests} total requests)`);
+        return filteredSpaces;
+    },
+
+    /*
+     * Builds hierarchy of spaces, folders, and lists WITHOUT tasks
+     * Used for hierarchy selection UI in settings
+     */
+    async getHierarchyMetadata() {
+        this.requests = 0;
+        console.log("Getting hierarchy metadata (no tasks) from ClickUp");
+
+        const spaces = await this.getSpaces().catch(e => {
+            console.error(e);
+            return [];
+        });
+
+        console.log(`Got ${spaces.length} spaces from ClickUp (${this.requests} rq)`);
+
+        if (spaces.length > 0) {
+            await Promise.all(spaces.map(async (space) => {
+                console.log(`Getting folders and lists for space ${space.name} (${this.requests} rq)`);
+
+                // Fetch folders with retry and timeout logic
+                const folders = await this.withTimeoutAndRetry(() => this.getFolders(space.id)).catch(e => {
+                    console.error(e);
+                    return [];
+                });
+                console.log(`Got ${folders.length} folders for space ${space.name} (${this.requests} rq)`);
+
+                if (folders.length > 0) {
+                    await Promise.all(folders.map(async (folder) => {
+                        const folderLists = await this.withTimeoutAndRetry(() => this.getFolderedLists(folder.id)).catch(e => {
+                            console.error(e);
+                            return [];
+                        });
+                        console.log(`Got ${folderLists.length} lists for folder ${folder.name} (${this.requests} rq)`);
+                        // Don't fetch tasks - just add lists
+                        if (folderLists.length > 0) {
+                            folder.addChildren(folderLists);
+                        }
+                    })).catch(e => console.error(e));
+                    space.addChildren(folders);
+                }
+
+                // Fetch lists directly in space
+                const lists = await this.withTimeoutAndRetry(() => this.getLists(space.id)).catch(e => {
+                    console.error(e);
+                    return [];
+                });
+                console.log(`Got ${lists.length} lists for space ${space.name} (${this.requests} rq)`);
+
+                if (lists.length > 0) {
+                    space.addChildren(lists);
+                }
+            })).catch(e => console.error(e));
+
+            return spaces;
+        }
+
+        return [];
+    },
+
+    async getCachedHierarchyMetadata() {
         try {
-            const cached = cache.get(HIERARCHY_CACHE_KEY)
+            const cached = cache.get(HIERARCHY_METADATA_CACHE_KEY)
 
             if (cached) {
-                console.log("Got hierarchy from cache")
+                console.log("Got hierarchy metadata from cache")
                 return cached
             }
 
-            let hierarchy = await this.getHierarchy().catch(e => {
+            let metadata = await this.getHierarchyMetadata().catch(e => {
                 console.error(e)
             })
             return cache.put(
-                HIERARCHY_CACHE_KEY,
-                hierarchy,
-                3600 * 6 // plus 6 hours
+                HIERARCHY_METADATA_CACHE_KEY,
+                metadata,
+                CACHE_DEFAULT
             )
         } catch (e) {
             console.error(e)
         }
-    },
-
-    clearCachedHierarchy() {
-        cache.clear(HIERARCHY_CACHE_KEY)
     },
 
     /*
@@ -395,7 +653,7 @@ export default {
                             archived: false,
                             include_markdown_description: false,
                             subtasks: true,
-                            include_closed: true,
+                            include_closed: false,
                             page: page
                         },
                         headers: {
@@ -409,7 +667,7 @@ export default {
                 });
 
                 tasks.push(...results);
-                hasMore = results.length === 100; // Continue if the page is full (100 tasks)
+                hasMore = results.length === CLICKUP_TASKS_PER_PAGE; // Continue if the page is full
                 page++;
 
             } catch (e) {
@@ -641,7 +899,7 @@ export default {
         return cache.put(
             USERS_CACHE_KEY,
             await this.getUsers(),
-            3600 * 6 // plus 6 hours
+            CACHE_DEFAULT
         )
     },
 }
