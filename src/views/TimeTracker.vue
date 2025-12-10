@@ -56,7 +56,7 @@
               </span>
             </template>
             {{ title }}
-            <template if="events.length > 0">
+            <template v-if="events.length > 0">
               <clock-icon class="w-3 ml-3 -mt-0.5 inline-block dark:text-gray-400"/>
               <span class="italic text-xs dark:text-gray-400">{{ totalHoursOnDate(events) }}</span>
             </template>
