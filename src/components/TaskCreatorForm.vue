@@ -49,7 +49,7 @@ let loadingClickup = ref(false);
 let loadingCreate = ref(false);
 let mentionable = ref([]);
 const withClosed = ref(false);
-const withSubtasks = ref(false);
+const withSubtasks = ref(true);
 
 let createForm = ref(null);
 

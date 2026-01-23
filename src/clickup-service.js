@@ -656,7 +656,7 @@ export default {
                             archived: false,
                             include_markdown_description: false,
                             subtasks: true,
-                            include_closed: false,
+                            include_closed: true,
                             page: page
                         },
                         headers: {
