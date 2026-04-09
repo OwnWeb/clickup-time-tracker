@@ -186,6 +186,13 @@
               <pencil-icon class="w-4 mx-1.5"/>
               <span>Open details</span>
             </button>
+
+            <button class="flex items-center py-1 space-x-1 italic text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    @click="toggleFavoriteTask(event)">
+              <star-icon-solid v-if="isTaskFavorited(event.taskId)" class="w-4 mx-1.5 text-yellow-500"/>
+              <star-icon-outline v-else class="w-4 mx-1.5"/>
+              <span>{{ isTaskFavorited(event.taskId) ? 'Remove from favorites' : 'Add to favorites' }}</span>
+            </button>
           </n-popover>
           <!-- END | Task context popover -->
         </div>
@@ -215,6 +222,7 @@
           class="max-w-xl bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-200"
           role="dialog"
           size="huge"
+          style="border-top: 3px solid #3b82f6; border-radius: 12px"
       >
         <TaskCreatorForm
             :end="selectedTask.end"
@@ -332,7 +340,8 @@ import TimeTrackingStatistics from '@/components/TimeTrackingStatistics'
 import TaskCreatorForm from '@/components/TaskCreatorForm.vue'
 
 import {ChartPieIcon, CogIcon, InformationCircleIcon, UsersIcon} from "@heroicons/vue/20/solid";
-import {ClockIcon, PencilIcon, TrashIcon} from "@heroicons/vue/24/outline";
+import {ClockIcon, PencilIcon, TrashIcon, StarIcon as StarIconOutline} from "@heroicons/vue/24/outline";
+import {StarIcon as StarIconSolid} from "@heroicons/vue/24/solid";
 import {
   NAvatar,
   NButton,
@@ -374,6 +383,8 @@ export default {
     TrashIcon,
     PencilIcon,
     InformationCircleIcon,
+    StarIconOutline,
+    StarIconSolid,
   },
 
   setup() {
@@ -396,6 +407,7 @@ export default {
       memberSelectorOpen: ref(false),
       statisticsOpen: ref(false),
       selectedTask: ref({}),
+      favoritedTasks: ref(store.get('settings.favorite_tasks') || []),
       totalHoursOnDate: totalHoursOnDateUtil,
       hasTimeTrackedOn: hasTimeTrackedOnUtil,
 
@@ -625,6 +637,30 @@ export default {
     | SELECTING A TASK & DISPLAY DETAIL MODAL
     |--------------------------------------------------------------------------
     */
+
+    toggleFavoriteTask(event) {
+      const index = this.favoritedTasks.findIndex(f => f.taskId === event.taskId);
+
+      if (index > -1) {
+        this.favoritedTasks.splice(index, 1);
+      } else {
+        this.favoritedTasks.push({
+          taskId: event.taskId,
+          title: event.title,
+          spaceName: event.spaceName || '',
+          folderName: '',
+          listName: '',
+          customId: '',
+          addedAt: Date.now(),
+        });
+      }
+
+      store.set('settings.favorite_tasks', this.favoritedTasks);
+    },
+
+    isTaskFavorited(taskId) {
+      return this.favoritedTasks.some(f => f.taskId === taskId);
+    },
 
     onTaskSingleClick(event) {
       this.selectedTask = event;

@@ -8,14 +8,15 @@ import {
   NH1,
   NIcon,
   NMention,
+  NTooltip,
   NTreeSelect,
   useNotification,
 } from "naive-ui";
 import {ArrowPathIcon, ArrowTurnDownRightIcon} from "@heroicons/vue/20/solid";
-import {DocumentCheckIcon} from "@heroicons/vue/24/outline";
+import {DocumentCheckIcon, ClockIcon, StarIcon as StarIconOutline, XMarkIcon} from "@heroicons/vue/24/outline";
 import {Folder, List, Planet} from '@vicons/ionicons5'
 import {CircleFilled} from "@vicons/carbon";
-import {computed, defineEmits, h, onMounted, ref} from "vue";
+import {computed, defineEmits, h, nextTick, onMounted, ref} from "vue";
 import {ipcRenderer} from 'electron';
 import clickupService from "@/clickup-service";
 import store from "@/store";
@@ -52,6 +53,9 @@ const withClosed = ref(false);
 const withSubtasks = ref(true);
 
 let createForm = ref(null);
+const descriptionRef = ref(null);
+const treeSelectRef = ref(null);
+const treeSelectOpen = ref(false);
 
 let formValue = ref({
   task: {
@@ -102,6 +106,111 @@ const filterRecursive = (items, withClosed, withSubtasks) => {
 const options = computed(() => {
   return filterRecursive(cloneDeep(clickUpItems.value), withClosed.value, withSubtasks.value)
 })
+
+const favoriteTasksRef = ref(store.get('settings.favorite_tasks') || []);
+
+function findTaskPath(items, taskId, ancestors = []) {
+  for (const item of items) {
+    if ((item.value === taskId || item.id === taskId) && !item.disable) {
+      return {path: ancestors, customId: item.custom_id};
+    }
+    if (item.children) {
+      const result = findTaskPath(item.children, taskId, [...ancestors, item.name]);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
+function buildTooltip(task, hierarchyData) {
+  const found = findTaskPath(hierarchyData, task.taskId);
+  if (found) {
+    const path = found.path.join(' > ');
+    return found.customId ? `${path} (${found.customId})` : path;
+  }
+  const parts = [task.spaceName, task.folderName, task.listName].filter(Boolean);
+  const path = parts.join(' > ');
+  if (task.customId) return path ? `${path} (${task.customId})` : task.customId;
+  return path || task.title;
+}
+
+function findListName(hierarchyData, taskId) {
+  const found = findTaskPath(hierarchyData, taskId);
+  if (!found || found.path.length === 0) return '';
+  return found.path[found.path.length - 1];
+}
+
+const quickSelectTasks = computed(() => {
+  const hierarchy = clickUpItems.value;
+  const favoriteIds = new Set(favoriteTasksRef.value.map(f => f.taskId));
+  const favorites = favoriteTasksRef.value
+      .map(f => ({...f, isFavorite: true}))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  const recents = (store.get('settings.recent_tasks') || [])
+      .filter(r => !favoriteIds.has(r.taskId))
+      .map(r => ({...r, isFavorite: false}));
+  const all = [...favorites, ...recents];
+
+  const titleCount = new Map();
+  for (const task of all) {
+    titleCount.set(task.title, (titleCount.get(task.title) || 0) + 1);
+  }
+
+  return all.map(task => ({
+    ...task,
+    tooltip: buildTooltip(task, hierarchy),
+    showList: titleCount.get(task.title) > 1,
+    resolvedListName: findListName(hierarchy, task.taskId),
+  }));
+});
+
+function selectQuickTask(task) {
+  formValue.value.task.taskId = task.taskId;
+  nextTick(() => {
+    descriptionRef.value?.focus();
+  });
+}
+
+function addFavoriteTask(task) {
+  const alreadyExists = favoriteTasksRef.value.some(f => f.taskId === task.taskId);
+  if (alreadyExists) return;
+
+  favoriteTasksRef.value.push({
+    taskId: task.taskId,
+    title: task.title,
+    spaceName: task.spaceName,
+    folderName: task.folderName,
+    listName: task.listName,
+    customId: task.customId,
+    addedAt: Date.now(),
+  });
+  store.set('settings.favorite_tasks', favoriteTasksRef.value);
+}
+
+function removeFavoriteTask(taskId) {
+  favoriteTasksRef.value = favoriteTasksRef.value.filter(f => f.taskId !== taskId);
+  store.set('settings.favorite_tasks', favoriteTasksRef.value);
+}
+
+const MAX_RECENT_TASKS = 6;
+
+function trackRecentTask(taskId, entry) {
+  const loc = entry.task_location || {};
+  const recents = store.get('settings.recent_tasks') || [];
+  const filtered = recents.filter(r => r.taskId !== taskId);
+
+  filtered.unshift({
+    taskId,
+    title: entry.task.name,
+    spaceName: loc.space_name || '',
+    folderName: loc.folder_name || '',
+    listName: loc.list_name || '',
+    customId: entry.task.custom_id || '',
+    usedAt: Date.now(),
+  });
+
+  store.set('settings.recent_tasks', filtered.slice(0, MAX_RECENT_TASKS));
+}
 
 // Naive UI custom theme
 
@@ -214,6 +323,7 @@ function createTask() {
         props.start,
         props.end
     ).then(entry => {
+      trackRecentTask(formValue.value.task.taskId, entry);
       pushEntryToCalendar(entry);
 
       onSuccess({
@@ -343,9 +453,25 @@ function normalize(v) {
 |--------------------------------------------------------------------------
 */
 
+function onFormKeydown(e) {
+  if (treeSelectOpen.value) return;
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+
+  e.preventDefault();
+  treeSelectOpen.value = true;
+  nextTick(() => {
+    const input = treeSelectRef.value?.$el?.querySelector('input');
+    if (input) {
+      input.focus();
+      input.value = e.key;
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+  });
+}
+
 // Fetch Clickup spaces on mount
 onMounted(async () => {
-  // Only fetch if we don't already have data
   if (clickUpItems.value.length === 0) {
     await getClickUpHierarchy()
   }
@@ -364,15 +490,28 @@ onMounted(async () => {
       :model="formValue.task"
       :rules="rules.task"
       size="large"
-      class="text-gray-800 dark:text-gray-200 p-4 rounded-md"
+      class="text-gray-800 dark:text-gray-200"
+      @keydown="onFormKeydown"
   >
-    <n-h1 class="text-gray-900 dark:text-gray-100 mb-4">What are you working on?</n-h1>
+    <div class="mb-4">
+      <n-h1 class="text-gray-900 dark:text-gray-100 !mb-0.5 flex items-center !text-xl">
+        <clock-icon class="w-6 h-6 mr-2 text-blue-500"/>
+        What are you working on?
+      </n-h1>
+      <p class="text-xs text-gray-400 dark:text-gray-500 ml-8">
+        {{ props.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+        &ndash;
+        {{ props.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+      </p>
+    </div>
 
-    <div class="flex space-x-2 mb-4">
-      <n-form-item path="taskId" class="flex-grow" :show-label="false">
+    <div class="flex space-x-2 mb-1">
+      <n-form-item path="taskId" class="flex-grow" :show-label="false" :show-feedback="false">
         <n-config-provider class="flex-grow" :theme-overrides="customTheme">
           <n-tree-select
+              ref="treeSelectRef"
               v-model:value="formValue.task.taskId"
+              v-model:show="treeSelectOpen"
               :options="options"
               :disabled="loadingClickup && clickUpItems.length === 0"
               :placeholder="
@@ -387,7 +526,7 @@ onMounted(async () => {
               :key-field="'value'"
               :disabled-field="'disable'"
               :render-prefix="renderSwitcherIcon"
-              class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200 border dark:border-gray-700"
+              class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200"
           >
             <template #header>
               <div class="flex space-x-2">
@@ -434,17 +573,64 @@ onMounted(async () => {
       </n-button>
     </div>
 
+    <!-- Quick select: favorites & recents -->
+    <div v-if="quickSelectTasks.length > 0" class="mt-3 mb-5">
+      <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">Pinned & recent tasks</p>
+      <div class="flex flex-wrap gap-1.5">
+        <n-tooltip
+            v-for="task in quickSelectTasks"
+            :key="task.taskId"
+            :disabled="!task.tooltip"
+            placement="bottom"
+        >
+          <template #trigger>
+            <div
+                class="group inline-flex items-center text-xs rounded-full border transition-colors duration-150 cursor-pointer"
+                :class="[
+                  task.isFavorite
+                    ? 'bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-300 dark:hover:bg-yellow-900/40'
+                    : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700',
+                  { 'ring-2 ring-blue-400 dark:ring-blue-500': formValue.task.taskId === task.taskId }
+                ]"
+            >
+              <span class="truncate max-w-[200px] pl-3 py-1" @click="selectQuickTask(task)">
+                {{ task.title }}<span v-if="task.showList && task.resolvedListName" class="ml-1 text-xs opacity-50">({{ task.resolvedListName }})</span>
+              </span>
+
+              <button
+                  v-if="task.isFavorite"
+                  class="ml-1 pr-2 py-1 text-yellow-600 hover:text-red-500 dark:text-yellow-400 dark:hover:text-red-400"
+                  @click.stop="removeFavoriteTask(task.taskId)"
+              >
+                <x-mark-icon class="w-3.5 h-3.5"/>
+              </button>
+
+              <button
+                  v-else
+                  class="ml-1 pr-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-yellow-500 dark:hover:text-yellow-400"
+                  @click.stop="addFavoriteTask(task)"
+              >
+                <star-icon-outline class="w-3.5 h-3.5"/>
+              </button>
+            </div>
+          </template>
+          {{ task.tooltip }}
+        </n-tooltip>
+      </div>
+    </div>
+
     <!-- Description textbox -->
-    <div class="flex space-x-2 mb-4">
-      <n-form-item path="description" class="flex-grow" :show-label="false">
+    <div class="flex space-x-2 mb-5">
+      <n-form-item path="description" class="flex-grow" :show-label="false" :show-feedback="false">
         <n-mention
+            ref="descriptionRef"
             v-model:value="formValue.task.description"
             :options="mentionable"
             :render-label="renderMentionLabel"
             placeholder="Describe what you worked on"
             type="textarea"
             :disabled="loadingClickup && clickUpItems.length === 0"
-            class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200 border dark:border-gray-700"
+            class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200"
         />
       </n-form-item>
     </div>
