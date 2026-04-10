@@ -734,7 +734,25 @@ export default {
         })
     },
 
-    createClickUpTask(listId, name, assignees = []) {
+    async getListStatuses(listId) {
+        return new Promise((resolve, reject) => {
+            request({
+                method: 'GET',
+                url: `${BASE_URL}/list/${listId}`,
+                headers: {
+                    'Authorization': store.get('settings.clickup_access_token'),
+                    'Content-Type': 'application/json'
+                },
+                timeout: DEFAULT_CLICKUP_TIMEOUT,
+            }, (error, response) => {
+                if (error) return reject(error)
+                const list = JSON.parse(response.body)
+                resolve(list.statuses || [])
+            });
+        })
+    },
+
+    createClickUpTask(listId, name, assignees = [], status = null) {
         const startTime = performance.now();
         const url = `${BASE_URL}/list/${listId}/task`;
 
@@ -749,6 +767,7 @@ export default {
                 body: JSON.stringify({
                     name,
                     assignees,
+                    ...(status && {status}),
                 }),
                 timeout: DEFAULT_CLICKUP_TIMEOUT,
             }, (error, response) => {

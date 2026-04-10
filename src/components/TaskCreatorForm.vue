@@ -6,6 +6,7 @@ import {
   NIcon,
   NInput,
   NModal,
+  NSelect,
   NTooltip,
   NTreeSelect,
   useNotification,
@@ -13,7 +14,7 @@ import {
 import {PlusIcon} from "@heroicons/vue/20/solid";
 import {Folder, List, Planet} from '@vicons/ionicons5'
 import {CircleFilled} from "@vicons/carbon";
-import {computed, defineEmits, h, ref} from "vue";
+import {computed, defineEmits, h, ref, watch} from "vue";
 import clickupService from "@/clickup-service";
 import store from "@/store";
 import removeAccents from 'remove-accents';
@@ -40,13 +41,42 @@ const notification = useNotification();
 
 const newTaskName = ref('');
 const selectedListId = ref(null);
+const selectedStatus = ref(null);
+const statusOptions = ref([]);
+const loadingStatuses = ref(false);
 const creatingTask = ref(false);
 const recentListsRef = ref(store.get('settings.recent_lists') || []);
 
 function open(name) {
   newTaskName.value = name ?? props.initialName;
   selectedListId.value = null;
+  selectedStatus.value = null;
+  statusOptions.value = [];
 }
+
+watch(selectedListId, async (listId) => {
+  if (!listId) {
+    statusOptions.value = [];
+    selectedStatus.value = null;
+    return;
+  }
+
+  loadingStatuses.value = true;
+  try {
+    const statuses = await clickupService.getListStatuses(listId);
+    statusOptions.value = buildStatusGroups(statuses);
+    const previousStillExists = statuses.some(s => s.status === selectedStatus.value);
+    if (!previousStillExists) {
+      const active = statuses.find(s => s.type === 'custom');
+      selectedStatus.value = active ? active.status : null;
+    }
+  } catch {
+    statusOptions.value = [];
+    selectedStatus.value = null;
+  } finally {
+    loadingStatuses.value = false;
+  }
+})
 
 function close() {
   emit('update:show', false);
@@ -102,7 +132,7 @@ function findListInHierarchy(items, listId, ancestors = []) {
 }
 
 async function handleCreateTask() {
-  if (!selectedListId.value || !newTaskName.value.trim()) return;
+  if (!selectedListId.value || !(newTaskName.value || '').trim()) return;
 
   creatingTask.value = true;
 
@@ -113,7 +143,8 @@ async function handleCreateTask() {
     const createdTask = await clickupService.createClickUpTask(
         selectedListId.value,
         newTaskName.value.trim(),
-        assignees
+        assignees,
+        selectedStatus.value
     );
 
     trackRecentList(selectedListId.value);
@@ -180,6 +211,46 @@ function normalize(v) {
   if (v === null || v === undefined) return '';
   const s = String(v);
   return removeAccents(s.toLowerCase()).trim();
+}
+
+const STATUS_TYPE_LABELS = {
+  open: 'Not started',
+  custom: 'Active',
+  closed: 'Done',
+};
+
+function buildStatusGroups(statuses) {
+  const groups = new Map();
+  for (const s of statuses) {
+    const groupKey = s.type === 'custom' ? 'custom' : s.type;
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, []);
+    }
+    groups.get(groupKey).push({
+      label: s.status.toUpperCase(),
+      value: s.status,
+      color: s.color,
+    });
+  }
+
+  const typeOrder = ['open', 'custom', 'closed'];
+  return typeOrder
+      .filter(type => groups.has(type))
+      .map(type => ({
+        type: 'group',
+        label: STATUS_TYPE_LABELS[type] || type,
+        key: type,
+        children: groups.get(type),
+      }));
+}
+
+function renderStatusLabel(option) {
+  return h('div', {style: 'display: flex; align-items: center;'}, [
+    h('div', {
+      style: `width: 10px; height: 10px; border-radius: 50%; border: 2px solid ${option.color || '#999'}; margin-right: 8px; flex-shrink: 0;`
+    }),
+    h('span', {style: 'font-weight: 500; font-size: 13px; letter-spacing: 0.02em;'}, option.label)
+  ]);
 }
 
 defineExpose({open});
@@ -264,6 +335,20 @@ defineExpose({open});
         </div>
       </div>
 
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+        <n-select
+            v-model:value="selectedStatus"
+            :options="statusOptions"
+            :loading="loadingStatuses"
+            :disabled="!selectedListId"
+            :placeholder="!selectedListId ? 'Select a list first' : 'Select a status...'"
+            size="large"
+            class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+            :render-label="renderStatusLabel"
+        />
+      </div>
+
       <div class="flex justify-end space-x-2">
         <n-button
             round
@@ -275,7 +360,7 @@ defineExpose({open});
         <n-button
             round
             type="primary"
-            :disabled="!selectedListId || !newTaskName.trim() || creatingTask"
+            :disabled="!selectedListId || !(newTaskName || '').trim() || creatingTask"
             :loading="creatingTask"
             @click="handleCreateTask"
             class="bg-green-600 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800"
