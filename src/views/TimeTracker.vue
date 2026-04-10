@@ -224,7 +224,7 @@
           size="huge"
           style="border-top: 3px solid #3b82f6; border-radius: 12px"
       >
-        <TaskCreatorForm
+        <TimeEntryCreatorForm
             :end="selectedTask.end"
             :start="selectedTask.start"
             :loading="loadingEvents"
@@ -337,7 +337,7 @@ import { totalHoursOnDate as totalHoursOnDateUtil, hasTimeTrackedOn as hasTimeTr
 
 import MemberSelector from '@/components/MemberSelector'
 import TimeTrackingStatistics from '@/components/TimeTrackingStatistics'
-import TaskCreatorForm from '@/components/TaskCreatorForm.vue'
+import TimeEntryCreatorForm from '@/components/TimeEntryCreatorForm.vue'
 
 import {ChartPieIcon, CogIcon, InformationCircleIcon, UsersIcon} from "@heroicons/vue/20/solid";
 import {ClockIcon, PencilIcon, TrashIcon, StarIcon as StarIconOutline} from "@heroicons/vue/24/outline";
@@ -364,7 +364,7 @@ export default {
     VueCal,
     MemberSelector,
     TimeTrackingStatistics,
-    TaskCreatorForm,
+    TimeEntryCreatorForm,
     RouterLink,
     NMention,
     NModal,

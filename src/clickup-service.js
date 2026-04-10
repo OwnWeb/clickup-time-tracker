@@ -10,6 +10,9 @@ export const HIERARCHY_CACHE_KEY = 'hierarchy';
 export const HIERARCHY_METADATA_CACHE_KEY = 'hierarchy_metadata';
 const USERS_CACHE_KEY = 'users';
 
+// Store keys
+export const STORE_KEY_USER_ID = 'settings.clickup_user_id';
+
 // Timeout and pagination constants
 const DEFAULT_CLICKUP_TIMEOUT = 30000; // 30 seconds
 const CLICKUP_TASKS_PER_PAGE = 100; // ClickUp API pagination limit
@@ -51,7 +54,32 @@ export default {
 
                 if (!user) reject('Invalid response')
 
+                store.set(STORE_KEY_USER_ID, user.id)
+
                 resolve(true)
+            });
+        })
+    },
+
+    async getCurrentUserId() {
+        const stored = store.get(STORE_KEY_USER_ID);
+        if (stored) return stored;
+
+        return new Promise((resolve, reject) => {
+            request({
+                method: 'GET',
+                url: `${BASE_URL}/user`,
+                headers: {
+                    'Authorization': store.get('settings.clickup_access_token'),
+                    'Content-Type': 'application/json'
+                },
+                timeout: DEFAULT_CLICKUP_TIMEOUT,
+            }, (error, response) => {
+                if (error) return reject(error)
+                const user = JSON.parse(response.body).user
+                if (!user) return reject('Invalid response')
+                store.set(STORE_KEY_USER_ID, user.id)
+                resolve(user.id)
             });
         })
     },
@@ -703,6 +731,39 @@ export default {
             return task
         }).catch(e => {
             console.error(e)
+        })
+    },
+
+    createClickUpTask(listId, name, assignees = []) {
+        const startTime = performance.now();
+        const url = `${BASE_URL}/list/${listId}/task`;
+
+        return new Promise((resolve, reject) => {
+            request({
+                method: 'POST',
+                url: url,
+                headers: {
+                    'Authorization': store.get('settings.clickup_access_token'),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name,
+                    assignees,
+                }),
+                timeout: DEFAULT_CLICKUP_TIMEOUT,
+            }, (error, response) => {
+                const elapsed = (performance.now() - startTime).toFixed(2);
+                console.log(`[API TIMING] POST ${url} - ${elapsed}ms`);
+
+                if (error) return reject(error)
+                const body = JSON.parse(response.body)
+
+                if (body.err) {
+                    return reject(body.err)
+                }
+
+                resolve(body)
+            })
         })
     },
 

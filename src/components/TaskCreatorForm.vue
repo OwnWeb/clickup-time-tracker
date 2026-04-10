@@ -1,407 +1,146 @@
 <script setup>
 import {
-  NAvatar,
   NButton,
-  NConfigProvider,
-  NForm,
-  NFormItem,
+  NCard,
   NH1,
   NIcon,
-  NMention,
+  NInput,
+  NModal,
   NTooltip,
   NTreeSelect,
   useNotification,
 } from "naive-ui";
-import {ArrowPathIcon, ArrowTurnDownRightIcon} from "@heroicons/vue/20/solid";
-import {DocumentCheckIcon, ClockIcon, StarIcon as StarIconOutline, XMarkIcon} from "@heroicons/vue/24/outline";
+import {PlusIcon} from "@heroicons/vue/20/solid";
 import {Folder, List, Planet} from '@vicons/ionicons5'
 import {CircleFilled} from "@vicons/carbon";
-import {computed, defineEmits, h, nextTick, onMounted, ref} from "vue";
-import {ipcRenderer} from 'electron';
+import {computed, defineEmits, h, ref} from "vue";
 import clickupService from "@/clickup-service";
 import store from "@/store";
 import removeAccents from 'remove-accents';
 import {cloneDeep} from "lodash";
 
-
 const props = defineProps({
-  start: {
-    type: Date,
-    required: true,
-  },
-  end: {
-    type: Date,
-    required: true,
-  },
-  loading: {
+  show: {
     type: Boolean,
-    default: false,
+    required: true,
+  },
+  initialName: {
+    type: String,
+    default: '',
+  },
+  hierarchy: {
+    type: Array,
+    default: () => [],
   },
 })
+
+const emit = defineEmits(['update:show', 'created']);
 
 const notification = useNotification();
 
-// Emits
-const emit = defineEmits(['close', 'create']);
+const newTaskName = ref('');
+const selectedListId = ref(null);
+const creatingTask = ref(false);
+const recentListsRef = ref(store.get('settings.recent_lists') || []);
 
-// Refs
-let clickUpItems = ref([]);
-let loadingClickup = ref(false);
-let loadingCreate = ref(false);
-let mentionable = ref([]);
-const withClosed = ref(false);
-const withSubtasks = ref(true);
+function open(name) {
+  newTaskName.value = name ?? props.initialName;
+  selectedListId.value = null;
+}
 
-let createForm = ref(null);
-const descriptionRef = ref(null);
-const treeSelectRef = ref(null);
-const treeSelectOpen = ref(false);
+function close() {
+  emit('update:show', false);
+}
 
-let formValue = ref({
-  task: {
-    taskId: null,
-    description: null,
-  },
-})
-
-const rules = ref({
-  task: {
-    taskId: {
-      required: true,
-      message: 'Please select a task'
-    },
-    description: {
-      required: store.get('settings.requireDescription'),
-      message: 'Please describe what you worked on',
-      trigger: ['blur']
-    },
-  },
-})
-
-const filterRecursive = (items, withClosed, withSubtasks) => {
+function stripTasksFromHierarchy(items) {
   return items
-      .filter(item => {
-        if (item.children && Array.isArray(item.children)) {
-          // Filter children recursively
-          item.children = filterRecursive(item.children, withClosed, withSubtasks);
-          return true;
+      .filter(item => item.type !== 'task' && item.type !== 'subtask')
+      .map(item => {
+        const clone = {...item};
+        if (item.type === 'list') {
+          clone.disable = false;
+          clone.children = undefined;
+        } else if (item.children) {
+          clone.children = stripTasksFromHierarchy(item.children);
         }
-
-        // Exclude subtasks if not allowed
-        if (!withSubtasks && item.type === 'subtask') {
-          return false;
-        }
-
-        // Exclude closed items if not allowed
-        if(!withClosed && item.date_closed !== null) {
-          return false;
-        }
-
-        return true;
+        return clone;
       });
-};
+}
 
-
-
-const options = computed(() => {
-  return filterRecursive(cloneDeep(clickUpItems.value), withClosed.value, withSubtasks.value)
+const listOptions = computed(() => {
+  return stripTasksFromHierarchy(cloneDeep(props.hierarchy));
 })
 
-const favoriteTasksRef = ref(store.get('settings.favorite_tasks') || []);
+const MAX_RECENT_LISTS = 4;
 
-function findTaskPath(items, taskId, ancestors = []) {
+function trackRecentList(listId) {
+  const found = findListInHierarchy(props.hierarchy, listId);
+  if (!found) return;
+
+  const filtered = recentListsRef.value.filter(r => r.listId !== listId);
+  filtered.unshift({
+    listId,
+    name: found.name,
+    path: found.path,
+    usedAt: Date.now(),
+  });
+  recentListsRef.value = filtered.slice(0, MAX_RECENT_LISTS);
+  store.set('settings.recent_lists', recentListsRef.value);
+}
+
+function findListInHierarchy(items, listId, ancestors = []) {
   for (const item of items) {
-    if ((item.value === taskId || item.id === taskId) && !item.disable) {
-      return {path: ancestors, customId: item.custom_id};
+    if ((item.id === listId || item.value === listId) && item.type === 'list') {
+      return {name: item.name, path: ancestors.join(' > ')};
     }
     if (item.children) {
-      const result = findTaskPath(item.children, taskId, [...ancestors, item.name]);
+      const result = findListInHierarchy(item.children, listId, [...ancestors, item.name]);
       if (result) return result;
     }
   }
   return null;
 }
 
-function buildTooltip(task, hierarchyData) {
-  const found = findTaskPath(hierarchyData, task.taskId);
-  if (found) {
-    const path = found.path.join(' > ');
-    return found.customId ? `${path} (${found.customId})` : path;
-  }
-  const parts = [task.spaceName, task.folderName, task.listName].filter(Boolean);
-  const path = parts.join(' > ');
-  if (task.customId) return path ? `${path} (${task.customId})` : task.customId;
-  return path || task.title;
-}
+async function handleCreateTask() {
+  if (!selectedListId.value || !newTaskName.value.trim()) return;
 
-function findListName(hierarchyData, taskId) {
-  const found = findTaskPath(hierarchyData, taskId);
-  if (!found || found.path.length === 0) return '';
-  return found.path[found.path.length - 1];
-}
+  creatingTask.value = true;
 
-const quickSelectTasks = computed(() => {
-  const hierarchy = clickUpItems.value;
-  const favoriteIds = new Set(favoriteTasksRef.value.map(f => f.taskId));
-  const favorites = favoriteTasksRef.value
-      .map(f => ({...f, isFavorite: true}))
-      .sort((a, b) => a.title.localeCompare(b.title));
-  const recents = (store.get('settings.recent_tasks') || [])
-      .filter(r => !favoriteIds.has(r.taskId))
-      .map(r => ({...r, isFavorite: false}));
-  const all = [...favorites, ...recents];
+  try {
+    const userId = await clickupService.getCurrentUserId().catch(() => null);
+    const assignees = userId ? [Number(userId)] : [];
 
-  const titleCount = new Map();
-  for (const task of all) {
-    titleCount.set(task.title, (titleCount.get(task.title) || 0) + 1);
-  }
+    const createdTask = await clickupService.createClickUpTask(
+        selectedListId.value,
+        newTaskName.value.trim(),
+        assignees
+    );
 
-  return all.map(task => ({
-    ...task,
-    tooltip: buildTooltip(task, hierarchy),
-    showList: titleCount.get(task.title) > 1,
-    resolvedListName: findListName(hierarchy, task.taskId),
-  }));
-});
+    trackRecentList(selectedListId.value);
+    emit('created', {task: createdTask, listId: selectedListId.value});
+    close();
 
-function selectQuickTask(task) {
-  formValue.value.task.taskId = task.taskId;
-  nextTick(() => {
-    descriptionRef.value?.focus();
-  });
-}
-
-function addFavoriteTask(task) {
-  const alreadyExists = favoriteTasksRef.value.some(f => f.taskId === task.taskId);
-  if (alreadyExists) return;
-
-  favoriteTasksRef.value.push({
-    taskId: task.taskId,
-    title: task.title,
-    spaceName: task.spaceName,
-    folderName: task.folderName,
-    listName: task.listName,
-    customId: task.customId,
-    addedAt: Date.now(),
-  });
-  store.set('settings.favorite_tasks', favoriteTasksRef.value);
-}
-
-function removeFavoriteTask(taskId) {
-  favoriteTasksRef.value = favoriteTasksRef.value.filter(f => f.taskId !== taskId);
-  store.set('settings.favorite_tasks', favoriteTasksRef.value);
-}
-
-const MAX_RECENT_TASKS = 6;
-
-function trackRecentTask(taskId, entry) {
-  const loc = entry.task_location || {};
-  const recents = store.get('settings.recent_tasks') || [];
-  const filtered = recents.filter(r => r.taskId !== taskId);
-
-  filtered.unshift({
-    taskId,
-    title: entry.task.name,
-    spaceName: loc.space_name || '',
-    folderName: loc.folder_name || '',
-    listName: loc.list_name || '',
-    customId: entry.task.custom_id || '',
-    usedAt: Date.now(),
-  });
-
-  store.set('settings.recent_tasks', filtered.slice(0, MAX_RECENT_TASKS));
-}
-
-// Naive UI custom theme
-
-/**
- * Use this for type hints under js file
- * @type import('naive-ui').GlobalThemeOverrides
- */
-const customTheme = {
-  common: {
-    "textColorDisabled": "-n-text-color"
-  }
-}
-
-
-/*
-|--------------------------------------------------------------------------
-| CASCASER HANDLERS
-|--------------------------------------------------------------------------
- */
-
-// A function that builds the cascader options. loops through the clickupItems and builds the options
-async function getClickUpHierarchy() {
-  // Delay showing loading indicator to avoid flash for cached data
-  const loadingTimeout = setTimeout(() => {
-    loadingClickup.value = true;
-  }, 200); // Only show loading if it takes more than 200ms
-
-  new Promise((resolve, reject) => {
-    ipcRenderer.send("get-clickup-hierarchy");
-    console.info("Fetching Clickup hierarchy (from cache when available)...");
-    ipcRenderer.once("set-clickup-hierarchy", (event, hierarchy) => {
-      resolve(hierarchy)
+    notification.success({
+      duration: 5000,
+      title: 'Task created in ClickUp',
+      content: `"${createdTask.name}" has been created and selected`,
     });
-
-    ipcRenderer.once("fetch-clickup-hierarchy-error", (event, error) => {
-      onError({
-        error,
-        title: "Failed to fetch Clickup hierarchy in the background",
-        content: "You can try again later by pressing the refresh button when searching for a space",
-      })
-      reject();
+  } catch (error) {
+    notification.error({
+      duration: 5000,
+      title: 'Failed to create task',
+      content: 'There was a problem creating the task in ClickUp. Please try again.',
     });
-
-  }).then((hierarchy) => {
-    clearTimeout(loadingTimeout); // Clear timeout when data arrives
-    clickUpItems.value = hierarchy
-    loadingClickup.value = false;
-  }).catch(() => {
-    clearTimeout(loadingTimeout); // Clear timeout on error too
-    loadingClickup.value = false;
-  })
-}
-
-async function refreshClickUpHierarchy() {
-  // Keep previous hierarchy visible while loading new data
-  loadingClickup.value = true;
-  new Promise((resolve, reject) => {
-    ipcRenderer.send("refresh-clickup-hierarchy");
-    console.info("Refreshing Clickup hierarchy in background (previous data remains accessible)...");
-    ipcRenderer.once("set-clickup-hierarchy", (event, hierarchy) => {
-      resolve(hierarchy)
-    });
-
-    ipcRenderer.once("fetch-clickup-hierarchy-error", (event, error) => {
-      onError({
-        error,
-        title: "Failed to fetch Clickup hierarchy in the background",
-        content: "You can try again later by pressing the refresh button when searching for a space",
-      })
-      reject();
-    });
-
-  }).then((hierarchy) => {
-    // Only update hierarchy after new data is loaded (keeps old data visible during load)
-    clickUpItems.value = hierarchy
-    onSuccess({
-      title: "Clickup hierarchy refreshed",
-      content: "The Clickup hierarchy has been refreshed in the background",
-    })
-  }).finally(() => {
-    loadingClickup.value = false;
-  })
-}
-
-/*
-|--------------------------------------------------------------------------
-| BUTTON HANDLERS
-|--------------------------------------------------------------------------
-*/
-
-
-function createTask() {
-  createForm.value?.validate((errors) => {
-    if (errors) {
-      console.error('Form validation failed:', errors);
-      onError({
-        title: 'Form validation failed',
-        content: 'Please check the form for errors',
-      })
-    } else {
-      pushToClickup()
-    }
-  })
-
-  const pushToClickup = () => {
-    loadingCreate.value = true;
-    clickupService.createTimeTrackingEntry(
-        formValue.value.task.taskId,
-        formValue.value.task.description,
-        props.start,
-        props.end
-    ).then(entry => {
-      trackRecentTask(formValue.value.task.taskId, entry);
-      pushEntryToCalendar(entry);
-
-      onSuccess({
-        title: 'Task created',
-        content: 'The task has been created in Clickup',
-      });
-    }).catch(error => {
-      cancelTaskCreation()
-      onError({
-        error,
-        title: "Looks like something went wrong",
-        content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
-      })
-      this.error({
-        error,
-        title: "Looks like something went wrong",
-        content: "There was a problem while pushing to Clickup. Check your console & internet connection and try again",
-      });
-    }).finally(() => {
-      loadingCreate.value = false;
-    });
+    console.error(error);
+  } finally {
+    creatingTask.value = false;
   }
-}
-
-function pushEntryToCalendar(entry) {
-  console.log('Pushing entry to calendar')
-  emit('create', entry);
-}
-
-function cancelTaskCreation() {
-  emit('close');
-}
-
-/*
-|--------------------------------------------------------------------------
-| NOTIFICATION HANDLERS
-|--------------------------------------------------------------------------
-*/
-
-// eslint-disable-next-line no-unused-vars
-function onSuccess(options) {
-  notification.success({duration: 5000, ...options});
-}
-
-function onError(options) {
-  notification.error({duration: 5000, ...options});
-
-  if (options.error) {
-    console.error(options.error);
-  }
-}
-
-/*
-|--------------------------------------------------------------------------
-| MISC & EASTER EGG LAND
-|--------------------------------------------------------------------------
-*/
-
-function renderMentionLabel(option) {
-  return h('div', {style: 'display: flex; align-items: center;'}, [
-    h(NAvatar, {
-      style: 'margin-right: 8px;',
-      size: 24,
-      round: true,
-      src: option.avatar
-    }, option.avatar ? '' : option.initials,),
-    option.value
-  ])
 }
 
 function renderSwitcherIcon(option) {
-  // Opion.option = id, label, leaf, name, type, value
   let icon = null;
   let color = null;
 
-  // This branch was split of from another branch were the color was made a setting, so here is the check remains to
-  // see whether a custom color is set or not. This branch will be merged first so this piece will serve no purpose,
-  // till the setting is implemented.
   if (store.get('settings.custom_color_enabled')) {
     color = store.get('settings.color')
   } else {
@@ -429,12 +168,8 @@ function renderSwitcherIcon(option) {
 function filter(query, option) {
   const q = normalize(query);
   const fields = [];
-  // Primary label/name
   if (option && option.label) fields.push(option.label);
   if (option && option.name) fields.push(option.name);
-  // ClickUp custom task ID like QM-793
-  if (option && option.custom_id) fields.push(String(option.custom_id));
-  // Numeric/internal id
   if (option && option.id) fields.push(String(option.id));
   if (option && option.value) fields.push(String(option.value));
 
@@ -447,219 +182,107 @@ function normalize(v) {
   return removeAccents(s.toLowerCase()).trim();
 }
 
-/*
-|--------------------------------------------------------------------------
-| MAIN
-|--------------------------------------------------------------------------
-*/
-
-function onFormKeydown(e) {
-  if (treeSelectOpen.value) return;
-  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-  if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
-
-  e.preventDefault();
-  treeSelectOpen.value = true;
-  nextTick(() => {
-    const input = treeSelectRef.value?.$el?.querySelector('input');
-    if (input) {
-      input.focus();
-      input.value = e.key;
-      input.dispatchEvent(new Event('input', {bubbles: true}));
-    }
-  });
-}
-
-// Fetch Clickup spaces on mount
-onMounted(async () => {
-  if (clickUpItems.value.length === 0) {
-    await getClickUpHierarchy()
-  }
-})
+defineExpose({open});
 </script>
 
-/*
-|--------------------------------------------------------------------------
-| TEMPLATE
-|--------------------------------------------------------------------------
-*/
-
 <template>
-  <n-form
-      ref="createForm"
-      :model="formValue.task"
-      :rules="rules.task"
-      size="large"
-      class="text-gray-800 dark:text-gray-200"
-      @keydown="onFormKeydown"
+  <n-modal
+      :show="show"
+      :mask-closable="true"
+      @update:show="emit('update:show', $event)"
+      class="dark:bg-gray-800"
   >
-    <div class="mb-4">
-      <n-h1 class="text-gray-900 dark:text-gray-100 !mb-0.5 flex items-center !text-xl">
-        <clock-icon class="w-6 h-6 mr-2 text-blue-500"/>
-        What are you working on?
-      </n-h1>
-      <p class="text-xs text-gray-400 dark:text-gray-500 ml-8">
-        {{ props.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-        &ndash;
-        {{ props.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-      </p>
-    </div>
-
-    <div class="flex space-x-2 mb-1">
-      <n-form-item path="taskId" class="flex-grow" :show-label="false" :show-feedback="false">
-        <n-config-provider class="flex-grow" :theme-overrides="customTheme">
-          <n-tree-select
-              ref="treeSelectRef"
-              v-model:value="formValue.task.taskId"
-              v-model:show="treeSelectOpen"
-              :options="options"
-              :disabled="loadingClickup && clickUpItems.length === 0"
-              :placeholder="
-                loadingClickup
-                  ? 'Loading tasks...'
-                  : 'Select a task or subtask'
-              "
-              :size="'large'"
-              :clearable="true"
-              :filterable="true"
-              :filter="filter"
-              :key-field="'value'"
-              :disabled-field="'disable'"
-              :render-prefix="renderSwitcherIcon"
-              class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-          >
-            <template #header>
-              <div class="flex space-x-2">
-                Include &nbsp;
-                <div
-                    class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 cursor-pointer p-1 text-xs flex justify-center border rounded-r-2xl px-2"
-                    @click="withClosed = !withClosed"
-                    :class="withClosed ? 'bg-green-200 dark:bg-green-400 dark:text-gray-900 border-green-600 hover:bg-green-300' : 'transparent border-transparent'"
-                >
-                  <n-icon class="flex items-center justify-center mr-1" name="arrow" size="14">
-                    <document-check-icon />
-                  </n-icon>
-                  Closed
-                </div>
-                <div
-                    class="rounded-2xl bg-gray-100 h-6 overflow-hidden flex text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 cursor-pointer p-1 text-xs flex justify-center border rounded-r-2xl px-2"
-                    @click="withSubtasks = !withSubtasks"
-                    :class="withSubtasks ? 'bg-green-200 dark:bg-green-400 dark:text-gray-900 border-green-600 hover:bg-green-300' : 'transparent border-transparent'"
-                >
-                  <n-icon class="flex items-center justify-center mr-1" name="arrow" size="14">
-                    <arrow-turn-down-right-icon/>
-                  </n-icon>
-                  Subtasks
-                </div>
-              </div>
-            </template>
-          </n-tree-select>
-        </n-config-provider>
-      </n-form-item>
-
-      <!-- Refresh button -->
-      <n-button
-          :disabled="loadingClickup"
-          circle
-          class="mt-0.5 bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-          secondary
-          strong
-          @click="refreshClickUpHierarchy"
-      >
-        <n-icon class="flex items-center justify-center" name="refresh" size="20">
-          <div v-if="loadingClickup" class="w-2 h-2 bg-blue-800 rounded-full animate-ping"></div>
-          <arrow-path-icon v-else/>
-        </n-icon>
-      </n-button>
-    </div>
-
-    <!-- Quick select: favorites & recents -->
-    <div v-if="quickSelectTasks.length > 0" class="mt-3 mb-5">
-      <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">Pinned & recent tasks</p>
-      <div class="flex flex-wrap gap-1.5">
-        <n-tooltip
-            v-for="task in quickSelectTasks"
-            :key="task.taskId"
-            :disabled="!task.tooltip"
-            placement="bottom"
-        >
-          <template #trigger>
-            <div
-                class="group inline-flex items-center text-xs rounded-full border transition-colors duration-150 cursor-pointer"
-                :class="[
-                  task.isFavorite
-                    ? 'bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-300 dark:hover:bg-yellow-900/40'
-                    : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700',
-                  { 'ring-2 ring-blue-400 dark:ring-blue-500': formValue.task.taskId === task.taskId }
-                ]"
-            >
-              <span class="truncate max-w-[200px] pl-3 py-1" @click="selectQuickTask(task)">
-                {{ task.title }}<span v-if="task.showList && task.resolvedListName" class="ml-1 text-xs opacity-50">({{ task.resolvedListName }})</span>
-              </span>
-
-              <button
-                  v-if="task.isFavorite"
-                  class="ml-1 pr-2 py-1 text-yellow-600 hover:text-red-500 dark:text-yellow-400 dark:hover:text-red-400"
-                  @click.stop="removeFavoriteTask(task.taskId)"
-              >
-                <x-mark-icon class="w-3.5 h-3.5"/>
-              </button>
-
-              <button
-                  v-else
-                  class="ml-1 pr-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-yellow-500 dark:hover:text-yellow-400"
-                  @click.stop="addFavoriteTask(task)"
-              >
-                <star-icon-outline class="w-3.5 h-3.5"/>
-              </button>
-            </div>
-          </template>
-          {{ task.tooltip }}
-        </n-tooltip>
+    <n-card
+        :bordered="false"
+        aria-modal="true"
+        class="max-w-md bg-white text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+        role="dialog"
+        size="huge"
+        style="border-top: 3px solid #10b981; border-radius: 12px"
+    >
+      <div class="mb-4">
+        <n-h1 class="text-gray-900 dark:text-gray-100 !mb-1 flex items-center !text-lg">
+          <plus-icon class="w-5 h-5 mr-2 text-green-500" />
+          Create new task
+        </n-h1>
+        <p class="text-xs text-gray-400 dark:text-gray-500 ml-7">
+          The task will be assigned to you automatically
+        </p>
       </div>
-    </div>
 
-    <!-- Description textbox -->
-    <div class="flex space-x-2 mb-5">
-      <n-form-item path="description" class="flex-grow" :show-label="false" :show-feedback="false">
-        <n-mention
-            ref="descriptionRef"
-            v-model:value="formValue.task.description"
-            :options="mentionable"
-            :render-label="renderMentionLabel"
-            placeholder="Describe what you worked on"
-            type="textarea"
-            :disabled="loadingClickup && clickUpItems.length === 0"
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Task name</label>
+        <n-input
+            v-model:value="newTaskName"
+            placeholder="Task name"
+            size="large"
+            class="dark:bg-gray-800 dark:text-gray-200"
+        />
+      </div>
+
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target list</label>
+        <n-tree-select
+            v-model:value="selectedListId"
+            :options="listOptions"
+            :filterable="true"
+            :filter="filter"
+            :key-field="'value'"
+            :disabled-field="'disable'"
+            :render-prefix="renderSwitcherIcon"
+            placeholder="Search for a list..."
+            size="large"
             class="bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200"
         />
-      </n-form-item>
-    </div>
+        <div v-if="recentListsRef.length > 0" class="mt-2">
+          <p class="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Recent lists</p>
+          <div class="flex flex-wrap gap-1.5">
+            <n-tooltip
+                v-for="list in recentListsRef"
+                :key="list.listId"
+                :disabled="!list.path"
+                placement="bottom"
+            >
+              <template #trigger>
+                <div
+                    class="inline-flex items-center text-xs rounded-full border px-3 py-1 cursor-pointer transition-colors duration-150"
+                    :class="[
+                      'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700',
+                      { 'ring-2 ring-green-400 dark:ring-green-500': selectedListId === list.listId }
+                    ]"
+                    @click="selectedListId = list.listId"
+                >
+                  <n-icon class="mr-1.5" size="12">
+                    <List />
+                  </n-icon>
+                  <span class="truncate max-w-[180px]">{{ list.name }}</span>
+                </div>
+              </template>
+              {{ list.path }}
+            </n-tooltip>
+          </div>
+        </div>
+      </div>
 
-    <!-- Create and cancel buttons -->
-    <div class="flex justify-end space-x-2">
-      <n-button
-          round
-          :disabled="loadingCreate || loading"
-          @click="cancelTaskCreation"
-          class="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
-      >
-        Cancel
-      </n-button>
-      <n-button
-          round
-          type="primary"
-          :disabled="loadingCreate || loading"
-          :loading="loadingCreate || loading"
-          @click="createTask"
-          class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
-      >
-        Create
-      </n-button>
-    </div>
-  </n-form>
+      <div class="flex justify-end space-x-2">
+        <n-button
+            round
+            @click="close"
+            class="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+        >
+          Cancel
+        </n-button>
+        <n-button
+            round
+            type="primary"
+            :disabled="!selectedListId || !newTaskName.trim() || creatingTask"
+            :loading="creatingTask"
+            @click="handleCreateTask"
+            class="bg-green-600 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800"
+        >
+          Create
+        </n-button>
+      </div>
+    </n-card>
+  </n-modal>
 </template>
-
-
-<style scoped>
-
-</style>
