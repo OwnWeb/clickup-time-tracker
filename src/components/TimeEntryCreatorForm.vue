@@ -437,9 +437,17 @@ function injectTaskMutate(task, listId) {
     return false;
   }
 
-  listItem.addChild(taskItem);
+  appendChild(listItem, taskItem);
   listItem.children.sort((a, b) => a.name.localeCompare(b.name));
   return true;
+}
+
+// Cache restore via electron-store strips prototypes, so ClickUpItem.addChild
+// is not available on items that have been through a cache round-trip. Manipulate
+// the children array directly to keep this working on plain objects too.
+function appendChild(parent, child) {
+  if (!Array.isArray(parent.children)) parent.children = [];
+  parent.children.push(child);
 }
 
 function persistHierarchy() {
@@ -461,7 +469,7 @@ function ensureListInHierarchy(factory, task, listId) {
       : space;
 
   const listItem = factory.createList({...task.list, space: {id: space.id}});
-  parentContainer.addChild(listItem);
+  appendChild(parentContainer, listItem);
   return listItem;
 }
 
@@ -484,7 +492,7 @@ function ensureFolder(factory, space, folderInfo) {
     name: folderInfo.name || 'Folder',
     space: {id: space.id},
   });
-  space.addChild(folderItem);
+  appendChild(space, folderItem);
   return folderItem;
 }
 
