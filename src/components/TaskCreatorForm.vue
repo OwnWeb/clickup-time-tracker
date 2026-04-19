@@ -17,8 +17,8 @@ import {CircleFilled} from "@vicons/carbon";
 import {computed, defineEmits, h, ref, watch} from "vue";
 import clickupService from "@/clickup-service";
 import store from "@/store";
-import removeAccents from 'remove-accents';
 import {cloneDeep} from "lodash";
+import {normalize} from "@/task-search";
 
 const props = defineProps({
   show: {
@@ -205,12 +205,6 @@ function filter(query, option) {
   if (option && option.value) fields.push(String(option.value));
 
   return fields.some(v => normalize(v).includes(q));
-}
-
-function normalize(v) {
-  if (v === null || v === undefined) return '';
-  const s = String(v);
-  return removeAccents(s.toLowerCase()).trim();
 }
 
 const STATUS_TYPE_LABELS = {

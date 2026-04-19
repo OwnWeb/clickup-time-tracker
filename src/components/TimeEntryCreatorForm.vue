@@ -16,16 +16,17 @@ import {ArrowPathIcon, ArrowTurnDownRightIcon, PlusIcon} from "@heroicons/vue/20
 import {DocumentCheckIcon, ClockIcon, StarIcon as StarIconOutline, XMarkIcon} from "@heroicons/vue/24/outline";
 import {Folder, List, Planet} from '@vicons/ionicons5'
 import {CircleFilled} from "@vicons/carbon";
-import {computed, defineEmits, h, nextTick, onMounted, ref} from "vue";
+import {computed, defineEmits, h, nextTick, onMounted, ref, watch} from "vue";
 import {ipcRenderer} from 'electron';
 import clickupService from "@/clickup-service";
 import store from "@/store";
-import removeAccents from 'remove-accents';
 import {cloneDeep} from "lodash";
-import {ClickUpItemFactory} from "@/model/ClickUpModels";
+import {ClickUpItemFactory, ClickUpType} from "@/model/ClickUpModels";
 import cache from "@/cache";
 import {HIERARCHY_CACHE_KEY} from "@/clickup-service";
 import TaskCreatorForm from "@/components/TaskCreatorForm.vue";
+import TaskSearchFallback from "@/components/TaskSearchFallback.vue";
+import {flattenTasks, searchTasks} from "@/task-search";
 
 
 const props = defineProps({
@@ -63,6 +64,7 @@ let createForm = ref(null);
 const descriptionRef = ref(null);
 const treeSelectRef = ref(null);
 const treeSelectOpen = ref(false);
+const expandedKeys = ref([]);
 
 let formValue = ref({
   task: {
@@ -95,7 +97,7 @@ const filterRecursive = (items, withClosed, withSubtasks) => {
         }
 
         // Exclude subtasks if not allowed
-        if (!withSubtasks && item.type === 'subtask') {
+        if (!withSubtasks && item.type === ClickUpType.SUBTASK) {
           return false;
         }
 
@@ -110,13 +112,43 @@ const filterRecursive = (items, withClosed, withSubtasks) => {
 
 
 
-const options = computed(() => {
+const filteredOptions = computed(() => {
   return filterRecursive(cloneDeep(clickUpItems.value), withClosed.value, withSubtasks.value)
 })
 
 const searchPattern = computed(() => {
   return treeSelectRef.value?.pattern || '';
 })
+
+const searchResults = computed(() => {
+  if (!searchPattern.value) return {exact: new Set(), fuzzy: new Set()};
+  const flat = flattenTasks(filteredOptions.value);
+  return searchTasks(flat, searchPattern.value);
+});
+
+const options = computed(() => {
+  if (!searchPattern.value) return filteredOptions.value;
+  return sortByRank(cloneDeep(filteredOptions.value), searchResults.value);
+});
+
+function sortByRank(items, {exact, fuzzy}) {
+  if (!items) return items;
+  for (const item of items) {
+    if (item.children && Array.isArray(item.children)) {
+      sortByRank(item.children, {exact, fuzzy});
+    }
+  }
+  items.sort((a, b) => taskRank(a, exact, fuzzy) - taskRank(b, exact, fuzzy));
+  return items;
+}
+
+function taskRank(item, exact, fuzzy) {
+  // Container nodes (space/folder/list) keep their original order: rank 0.
+  if (item.disable) return 0;
+  if (exact.has(item.id)) return 0;
+  if (fuzzy.has(item.id)) return 1;
+  return 2;
+}
 
 const favoriteTasksRef = ref(store.get('settings.favorite_tasks') || []);
 
@@ -379,6 +411,7 @@ function openCreateTaskModal() {
 function onTaskCreated({task, listId}) {
   injectTaskIntoHierarchy(task, listId);
   formValue.value.task.taskId = task.id;
+  lastSearchPattern.value = '';
   treeSelectOpen.value = false;
 
   nextTick(() => {
@@ -386,33 +419,85 @@ function onTaskCreated({task, listId}) {
   });
 }
 
+const HIERARCHY_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 function injectTaskIntoHierarchy(task, listId) {
+  if (injectTaskMutate(task, listId)) {
+    persistHierarchy();
+  }
+}
+
+function injectTaskMutate(task, listId) {
   const factory = new ClickUpItemFactory();
   const taskItem = factory.createTask(task);
 
-  function findAndInject(items) {
-    if (!items) return false;
-    for (const item of items) {
-      if ((item.id === listId || item.value === listId) && item.type === 'list') {
-        if (!item.children) {
-          item.children = [];
-        }
-        item.children.push(taskItem);
-        item.children.sort((a, b) => a.name.localeCompare(b.name));
-        return true;
-      }
-      if (item.children && findAndInject(item.children)) {
-        return true;
-      }
-    }
+  const listItem = ensureListInHierarchy(factory, task, listId);
+  if (!listItem) {
+    console.warn('Could not resolve list for task', {taskId: task.id, listId});
     return false;
   }
 
-  findAndInject(clickUpItems.value);
-  clickUpItems.value = [...clickUpItems.value];
+  listItem.addChild(taskItem);
+  listItem.children.sort((a, b) => a.name.localeCompare(b.name));
+  return true;
+}
 
-  const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
-  cache.put(HIERARCHY_CACHE_KEY, clickUpItems.value, SEVEN_DAYS_IN_SECONDS);
+function persistHierarchy() {
+  clickUpItems.value = [...clickUpItems.value];
+  cache.put(HIERARCHY_CACHE_KEY, clickUpItems.value, HIERARCHY_CACHE_TTL_SECONDS);
+}
+
+function ensureListInHierarchy(factory, task, listId) {
+  const existingList = findItem(clickUpItems.value, item => item.type === ClickUpType.LIST && item.id === listId);
+  if (existingList) return existingList;
+
+  if (!task.list) return null;
+
+  const space = ensureSpace(factory, task.space);
+  if (!space) return null;
+
+  const parentContainer = task.folder && !task.folder.hidden
+      ? ensureFolder(factory, space, task.folder)
+      : space;
+
+  const listItem = factory.createList({...task.list, space: {id: space.id}});
+  parentContainer.addChild(listItem);
+  return listItem;
+}
+
+function ensureSpace(factory, spaceInfo) {
+  if (!spaceInfo?.id) return null;
+  const existing = findItem(clickUpItems.value, item => item.type === ClickUpType.SPACE && item.id === spaceInfo.id);
+  if (existing) return existing;
+
+  const spaceItem = factory.createSpace({id: spaceInfo.id, name: spaceInfo.name || 'Space'});
+  clickUpItems.value.push(spaceItem);
+  return spaceItem;
+}
+
+function ensureFolder(factory, space, folderInfo) {
+  const existing = findItem([space], item => item.type === ClickUpType.FOLDER && item.id === folderInfo.id);
+  if (existing) return existing;
+
+  const folderItem = factory.createFolder({
+    id: folderInfo.id,
+    name: folderInfo.name || 'Folder',
+    space: {id: space.id},
+  });
+  space.addChild(folderItem);
+  return folderItem;
+}
+
+function findItem(items, predicate) {
+  if (!items) return null;
+  for (const item of items) {
+    if (predicate(item)) return item;
+    if (item.children) {
+      const found = findItem(item.children, predicate);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 /*
@@ -485,24 +570,46 @@ function renderSwitcherIcon(option) {
 }
 
 function filter(query, option) {
-  const q = normalize(query);
-  const fields = [];
-  // Primary label/name
-  if (option && option.label) fields.push(option.label);
-  if (option && option.name) fields.push(option.name);
-  // ClickUp custom task ID like QM-793
-  if (option && option.custom_id) fields.push(String(option.custom_id));
-  // Numeric/internal id
-  if (option && option.id) fields.push(String(option.id));
-  if (option && option.value) fields.push(String(option.value));
-
-  return fields.some(v => normalize(v).includes(q));
+  if (!query) return true;
+  // Return false for container nodes; NTreeSelect automatically keeps ancestors
+  // of any matching leaf visible and expanded.
+  if (option?.disable) return false;
+  const {exact, fuzzy} = searchResults.value;
+  return exact.has(option?.id) || fuzzy.has(option?.id);
 }
 
-function normalize(v) {
-  if (v === null || v === undefined) return '';
-  const s = String(v);
-  return removeAccents(s.toLowerCase()).trim();
+function onTasksFoundFromFallback(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) return;
+
+  const existingIds = collectTaskIds(clickUpItems.value);
+  const newTasks = tasks.filter(task => task?.id && !existingIds.has(task.id));
+
+  let mutated = false;
+  for (const task of newTasks) {
+    if (injectTaskMutate(task, task.list.id)) mutated = true;
+  }
+  if (mutated) persistHierarchy();
+
+  expandAncestorsOf(tasks);
+}
+
+function expandAncestorsOf(tasks) {
+  const ancestorIds = new Set(expandedKeys.value);
+  for (const task of tasks) {
+    if (task?.space?.id) ancestorIds.add(task.space.id);
+    if (task?.folder?.id && !task.folder.hidden) ancestorIds.add(task.folder.id);
+    if (task?.list?.id) ancestorIds.add(task.list.id);
+  }
+  expandedKeys.value = Array.from(ancestorIds);
+}
+
+function collectTaskIds(items, accumulator = new Set()) {
+  if (!Array.isArray(items)) return accumulator;
+  for (const item of items) {
+    if (item.id) accumulator.add(item.id);
+    if (item.children) collectTaskIds(item.children, accumulator);
+  }
+  return accumulator;
 }
 
 /*
@@ -527,6 +634,27 @@ function onFormKeydown(e) {
     }
   });
 }
+
+const lastSearchPattern = ref('');
+
+watch(searchPattern, (val) => {
+  if (val) lastSearchPattern.value = val;
+});
+
+watch(treeSelectOpen, (isOpen) => {
+  if (!isOpen) return;
+  if (!lastSearchPattern.value) return;
+  nextTick(() => {
+    const input = treeSelectRef.value?.$el?.querySelector('input');
+    if (!input) return;
+    input.value = lastSearchPattern.value;
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+  });
+});
+
+watch(() => formValue.value.task.taskId, (val) => {
+  if (val) lastSearchPattern.value = '';
+});
 
 // Fetch Clickup spaces on mount
 onMounted(async () => {
@@ -570,6 +698,7 @@ onMounted(async () => {
               ref="treeSelectRef"
               v-model:value="formValue.task.taskId"
               v-model:show="treeSelectOpen"
+              v-model:expanded-keys="expandedKeys"
               :options="options"
               :disabled="loadingClickup && clickUpItems.length === 0"
               :placeholder="
@@ -611,10 +740,16 @@ onMounted(async () => {
                 </div>
               </div>
             </template>
+            <template #empty>
+              <task-search-fallback
+                  :pattern="searchPattern"
+                  @tasks-found="onTasksFoundFromFallback"
+              />
+            </template>
             <template #action>
               <div
                   v-if="searchPattern.length > 0"
-                  class="flex items-center px-3 py-2 cursor-pointer text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-gray-700 transition-colors"
+                  class="flex items-center px-3 py-1 cursor-pointer text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-gray-700 transition-colors"
                   @mousedown.prevent.stop="openCreateTaskModal"
               >
                 <n-icon class="mr-2" size="16">

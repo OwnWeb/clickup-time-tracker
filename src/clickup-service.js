@@ -711,27 +711,82 @@ export default {
     },
 
     async getTask(taskId, raw = false) {
+        return this._fetchTaskById(taskId, {raw, useCustomId: false});
+    },
+
+    async getTaskByCustomId(customId, raw = false) {
+        return this._fetchTaskById(customId, {raw, useCustomId: true});
+    },
+
+    async _fetchTaskById(taskId, {raw = false, useCustomId = false} = {}) {
+        const qs = {
+            include_subtasks: true,
+            include_markdown_description: false,
+        };
+        if (useCustomId) {
+            qs.custom_task_ids = true;
+            qs.team_id = store.get('settings.clickup_team_id');
+        }
+
         return new Promise((resolve, reject) => {
             request({
                 method: 'GET',
                 mode: 'no-cors',
-                url: `${BASE_URL}/task/${taskId}?include_subtasks=true&include_markdown_description=false`,
+                url: `${BASE_URL}/task/${taskId}`,
+                qs,
                 headers: {
                     'Authorization': store.get('settings.clickup_access_token'),
                     'Content-Type': 'application/json'
                 }
             }, (error, response) => {
-                if (error) return reject(error)
-                resolve(JSON.parse(response.body) || [])
+                if (error) return reject(error);
+                const body = JSON.parse(response.body) || {};
+                // ClickUp returns {err, ECODE} when not found. Treat as null instead of rejecting.
+                if (body.err) return resolve(null);
+                resolve(body);
             });
         }).then(task => {
+            if (!task) return null;
             if (!raw) {
-                task = factory.createTask(task)
+                task = factory.createTask(task);
             }
-            return task
+            return task;
         }).catch(e => {
-            console.error(e)
-        })
+            console.error(e);
+            return null;
+        });
+    },
+
+    /*
+     * Fetch the most recently updated team tasks (first page only).
+     * Used as a fallback search source when a query yields zero local matches.
+     */
+    async getRecentTeamTasks(limit = 50) {
+        return new Promise((resolve, reject) => {
+            request({
+                method: 'GET',
+                url: `${teamRootUrl()}/task`,
+                qs: {
+                    page: 0,
+                    order_by: 'updated',
+                    include_closed: true,
+                    subtasks: true,
+                },
+                headers: {
+                    'Authorization': store.get('settings.clickup_access_token'),
+                    'Content-Type': 'application/json'
+                },
+                timeout: DEFAULT_CLICKUP_TIMEOUT,
+            }, (error, response) => {
+                if (error) return reject(error);
+                const body = JSON.parse(response.body) || {};
+                const tasks = body.tasks || [];
+                resolve(tasks.slice(0, limit));
+            });
+        }).catch(e => {
+            console.error('getRecentTeamTasks failed:', e);
+            return [];
+        });
     },
 
     async getListStatuses(listId) {
