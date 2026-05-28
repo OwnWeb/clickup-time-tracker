@@ -26,7 +26,7 @@ import cache from "@/cache";
 import {HIERARCHY_CACHE_KEY} from "@/clickup-service";
 import TaskCreatorForm from "@/components/TaskCreatorForm.vue";
 import TaskSearchFallback from "@/components/TaskSearchFallback.vue";
-import {flattenTasks, searchTasks} from "@/task-search";
+import {flattenTasks, normalize, searchTasks} from "@/task-search";
 
 
 const props = defineProps({
@@ -647,7 +647,26 @@ const lastSearchPattern = ref('');
 
 watch(searchPattern, (val) => {
   if (val) lastSearchPattern.value = val;
+  autoSelectTaskByExactId(val);
 });
+
+function autoSelectTaskByExactId(pattern) {
+  if (!pattern) return;
+  const normalized = normalize(pattern);
+  if (!normalized) return;
+
+  const flat = flattenTasks(filteredOptions.value);
+  const match = flat.find(task =>
+      normalize(task.id) === normalized || normalize(task.custom_id) === normalized
+  );
+  if (!match) return;
+
+  formValue.value.task.taskId = match.value ?? match.id;
+  treeSelectOpen.value = false;
+  nextTick(() => {
+    descriptionRef.value?.focus();
+  });
+}
 
 watch(treeSelectOpen, (isOpen) => {
   if (!isOpen) return;
